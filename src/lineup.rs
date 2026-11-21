@@ -23,10 +23,6 @@ pub const QUEUE: [u64; 2] = [0x2b4, 0x5f4];
 pub const QUEUE_LEN: usize = 6;
 pub const STATUS_REQUESTED: u32 = 1;
 pub const STATUS_DONE: u32 = 0x101;
-/// Before the home list: the minute a sub was requested (u8) and the "sub requested" flag (u8).
-/// The pause menu sets both; without the flag the game empties the queue at the next stoppage.
-/// Measured for the home side only (FL_2027.exe 1.00).
-pub const HOME_FLAG: u64 = 0x1e8;
 const TEAM_LEN: usize = 0x38 + 11 * 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -182,21 +178,10 @@ pub fn request_sub(
     side: usize,
     out_slot: u32,
     in_slot: u32,
-    minute: u32,
+    _minute: u32,
 ) -> Result<()> {
     if side > 1 {
         bail!("unknown team");
-    }
-    if side == 1 {
-        bail!(
-            "Substitutions from the phone work for the home team only so far. Please use the pause menu."
-        );
-    }
-    let Some(flag) = mem.read(home - HOME_FLAG, 2) else {
-        bail!("could not read the substitution flag")
-    };
-    if flag[1] > 1 {
-        bail!("the line-up in memory looks different than expected; is this FL_2027.exe 1.00?");
     }
     let base = home + if side == 1 { AWAY } else { 0 };
     let Some(xb) = mem.read(base + XI, 11 * 4) else {
@@ -264,8 +249,12 @@ pub fn request_sub(
     if !mem.write(e, &slots) || !mem.write(e + 8, &STATUS_REQUESTED.to_le_bytes()) {
         bail!("writing to the game was not allowed");
     }
-    // Like the menu: the minute, then the flag.
-    if !mem.write(home - HOME_FLAG, &[minute.min(255) as u8, 1]) {
+    // The first byte of the queue head is 0xff for a team a person controls. Then the
+    // engine leaves the queue alone (only the pause menu works through it) and drops our
+    // entry at the next stoppage. Computer teams have a slot number there, and the engine
+    // makes their subs itself. Setting it makes the engine take our sub too.
+    // 0x0a worked in two matches; other values are left as they are.
+    if head[0] == 0xff && !mem.write(home + QUEUE[side] - 4, &[0x0a]) {
         bail!("writing to the game was not allowed");
     }
     Ok(())
@@ -346,9 +335,9 @@ mod tests {
     fn request_sub_like_the_menu() {
         let m = fake(0x300);
         let home = 0x4000_0300;
-        m.write(home - HOME_FLAG, &[0, 0]);
+        m.write(home + QUEUE[0] - 4, &[0xff]);
         request_sub(&m, home, 0, 10, 28, 25).unwrap();
-        assert_eq!(m.read(home - HOME_FLAG, 2).unwrap(), vec![25, 1]);
+        assert_eq!(m.read(home + QUEUE[0] - 4, 1).unwrap(), vec![10]);
         // The menu leaves the line-up lists alone; so do we.
         let list = m.read(home, 40).unwrap();
         assert_eq!(list[10], 10);
@@ -365,7 +354,8 @@ mod tests {
         // Same players again, or a player already on the pitch, is refused.
         assert!(request_sub(&m, home, 0, 10, 29, 25).is_err());
         assert!(request_sub(&m, home, 0, 3, 4, 25).is_err());
-        // Away side: not measured yet, refused.
-        assert!(request_sub(&m, home, 1, 9, 22, 25).is_err());
+        // Away side writes its own queue.
+        request_sub(&m, home, 1, 9, 22, 25).unwrap();
+        assert_eq!(read(&m, home).unwrap().queue[1][0].in_slot, 22);
     }
 }
