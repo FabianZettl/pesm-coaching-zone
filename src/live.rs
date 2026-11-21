@@ -525,17 +525,19 @@ pub fn rating(p: &crate::stats::Slot) -> f32 {
     (r.clamp(3.0, 10.0) * 10.0).round() / 10.0
 }
 
+/// "B.FERNANDES" -> "B.Fernandes", "DE LIGT" -> "De Ligt", "O'NEIL" -> "O'Neil".
 fn title_case(s: &str) -> String {
-    s.split(' ')
-        .map(|w| {
-            let mut c = w.chars();
-            match c.next() {
-                Some(f) => f.to_uppercase().collect::<String>() + &c.as_str().to_lowercase(),
-                None => String::new(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
+    let mut out = String::with_capacity(s.len());
+    let mut start = true;
+    for ch in s.chars() {
+        if start {
+            out.extend(ch.to_uppercase());
+        } else {
+            out.extend(ch.to_lowercase());
+        }
+        start = matches!(ch, ' ' | '.' | '-' | '\'');
+    }
+    out
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -703,6 +705,14 @@ mod tests {
         s2.sides[0][0].as_mut().unwrap().id = 99;
         t.update(s2, now);
         assert!(t.events.is_empty());
+    }
+
+    #[test]
+    fn shirt_names() {
+        assert_eq!(title_case("B.FERNANDES"), "B.Fernandes");
+        assert_eq!(title_case("DE LIGT"), "De Ligt");
+        assert_eq!(title_case("ŠEŠKO"), "Šeško");
+        assert_eq!(title_case("MAC ALLISTER"), "Mac Allister");
     }
 
     #[test]

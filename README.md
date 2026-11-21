@@ -4,6 +4,12 @@
 
 You play FL27 full screen on your PC. Your phone sits next to you and shows the match as it happens:
 
+<p align="center">
+  <img src="docs/screenshots/match.jpg" width="250" alt="Match tab: score, latest events, best player, quick stats">
+  <img src="docs/screenshots/xi.jpg" width="250" alt="XI tab: line-up on a pitch with live ratings">
+  <img src="docs/screenshots/stats.jpg" width="250" alt="Stats tab: team statistics">
+</p>
+
 - **Match:** score, scorers, the latest goals, cards and substitutions, best player so far
 - **XI:** both line-ups on a pitch with live ratings. Tap a shirt for the player's stats. Bench and subs are included.
 - **Stats:** shots, xG, passes, pass accuracy, duels, corners, fouls, cards and saves, plus the flow per 15 minutes and a player table
