@@ -199,7 +199,21 @@ pub fn request_sub(
     if out_slot >= 40 || in_slot >= 40 {
         bail!("player not found in the line-up");
     }
+    let Some(list) = mem.read(base, 40) else {
+        bail!("could not read the line-up")
+    };
     let xi: Vec<u32> = (0..11).map(|i| u32_at(&xb, i * 4)).collect();
+    // FL27 checks its own line-up list when it makes the change and drops the sub
+    // unless the player going off is in the eleven there and the one coming on is on the bench.
+    let (eleven, bench) = list.split_at(11);
+    if !eleven.contains(&(out_slot as u8))
+        || !bench.contains(&(in_slot as u8))
+        || eleven.contains(&(in_slot as u8))
+    {
+        bail!(
+            "FL27's own line-up doesn't match this change. Please use the pause menu for this one."
+        );
+    }
     if !xi.contains(&out_slot) {
         bail!("the player going off is not on the pitch");
     }
