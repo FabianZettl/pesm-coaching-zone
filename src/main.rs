@@ -6,7 +6,6 @@ mod server;
 use anyhow::Result;
 use pesm_coaching_zone::{lineup, live::Tracker, pesdb, process, process::Memory, stats};
 use serde::{Deserialize, Serialize};
-use server::SubCmd;
 use server::{Live, Shared};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -52,7 +51,6 @@ struct Args {
     pesdb: Option<PathBuf>,
     game: Option<PathBuf>,
     no_browser: bool,
-    no_subs: bool,
 }
 
 const HELP: &str = "PESM Coaching Zone - live FL27 match stats on your phone
@@ -65,7 +63,6 @@ OPTIONS:
   --port <number>    Port for the phone page (default 8317).
   --demo             Play a made-up match, no game needed.
   --no-browser       Don't open the PC page in the browser.
-  --no-subs          Read only: don't allow substitutions from the phone.
   -h, --help         Show this help.
 
 The chosen name folder is remembered for next time.";
@@ -77,14 +74,12 @@ fn parse_args() -> Args {
         pesdb: None,
         game: None,
         no_browser: false,
-        no_subs: false,
     };
     let mut it = std::env::args().skip(1);
     while let Some(x) = it.next() {
         match x.as_str() {
             "--demo" => a.demo = true,
             "--no-browser" => a.no_browser = true,
-            "--no-subs" => a.no_subs = true,
             "--port" => {
                 a.port = it
                     .next()
@@ -159,8 +154,6 @@ fn reader_loop(
     tx: watch::Sender<Live>,
     db: Option<pesdb::Database>,
     demo: bool,
-    subs: std::sync::mpsc::Receiver<SubCmd>,
-    allow_subs: bool,
 ) {
     let names = db.is_some() || demo;
     let db = if demo { Some(demo::database()) } else { db };
@@ -183,21 +176,9 @@ fn reader_loop(
                 tracker = Tracker::new();
             }
             tracker.set_lineups(Some(m.lineups()));
-            tracker.can_sub = allow_subs;
             tracker.update(snap, Instant::now());
             publish(&tracker, "live", "Demo match with made-up players.".into());
-            let until = Instant::now() + TICK;
-            while Instant::now() < until {
-                if let Ok(cmd) = subs.try_recv() {
-                    let res = if allow_subs {
-                        m.substitute(cmd.side, cmd.out_slot, cmd.in_slot)
-                    } else {
-                        Err("Substitutions are turned off on the PC (--no-subs).".into())
-                    };
-                    let _ = cmd.reply.send(res);
-                }
-                std::thread::sleep(Duration::from_millis(100));
-            }
+            std::thread::sleep(TICK);
         }
     }
 
@@ -287,19 +268,11 @@ fn reader_loop(
                     teams = found.first().copied();
                     l = teams.and_then(|t| lineup::read(g, t));
                     match teams {
-                        Some(t) => println!(
-                            "Line-up found ({t:#x}). {}",
-                            if g.can_write() && allow_subs {
-                                "Substitutions from the phone are on."
-                            } else {
-                                "Substitutions from the phone are off."
-                            }
-                        ),
+                        Some(t) => println!("Line-up found ({t:#x})."),
                         None => println!("Line-up not found; guessing who is on the pitch."),
                     }
                 }
                 tracker.set_lineups(l);
-                tracker.can_sub = allow_subs && g.can_write() && teams.is_some();
                 tracker.update(s, Instant::now());
                 publish(&tracker, "live", String::new());
             }
@@ -314,31 +287,7 @@ fn reader_loop(
                 publish(&tracker, "waiting_match", msg.into());
             }
         }
-        // Wait for the next tick, answering substitution requests right away.
-        let until = Instant::now() + TICK;
-        while Instant::now() < until {
-            if let Ok(cmd) = subs.try_recv() {
-                let res = match (teams, tracker.can_sub) {
-                    (Some(t), true) => {
-                        let minute = tracker.view(None).map_or(0, |v| v.minute);
-                        lineup::request_sub(g, t, cmd.side, cmd.out_slot, cmd.in_slot, minute)
-                            .map_err(|e| e.to_string())
-                    }
-                    _ if !allow_subs => Err("Substitutions are turned off on the PC (--no-subs).".into()),
-                    _ if !g.can_write() => Err("No permission to change the game. See the README (setcap on Linux, same user on Windows).".into()),
-                    _ => Err("The line-up was not found in this match yet.".into()),
-                };
-                if res.is_ok() {
-                    println!(
-                        "Substitution requested: side {}, slot {} off, slot {} on.",
-                        cmd.side, cmd.out_slot, cmd.in_slot
-                    );
-                    tracker.set_lineups(teams.and_then(|t| lineup::read(g, t)));
-                }
-                let _ = cmd.reply.send(res);
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
+        std::thread::sleep(TICK);
     }
 }
 
@@ -373,9 +322,7 @@ async fn main() -> Result<()> {
         ..Default::default()
     });
     let demo = args.demo;
-    let (sub_tx, sub_rx) = std::sync::mpsc::channel();
-    let allow_subs = !args.no_subs;
-    std::thread::spawn(move || reader_loop(tx, db, demo, sub_rx, allow_subs));
+    std::thread::spawn(move || reader_loop(tx, db, demo));
 
     let shared = Arc::new(Shared {
         token,
@@ -384,7 +331,6 @@ async fn main() -> Result<()> {
         live: rx,
         phones: Mutex::new(0),
         failures: Mutex::new((0, None)),
-        subs: Mutex::new(sub_tx),
     });
     let app = server::router(shared);
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", args.port))

@@ -133,8 +133,8 @@ impl DemoMatch {
         }
     }
 
-    /// A substitution asked for on the phone. The demo makes it at once.
-    pub fn substitute(&mut self, side: usize, out_slot: u32, in_slot: u32) -> Result<(), String> {
+    /// Makes a substitution at once.
+    fn substitute(&mut self, side: usize, out_slot: u32, in_slot: u32) -> Result<(), String> {
         let (out, inn) = (out_slot as usize, in_slot as usize);
         if side > 1 {
             return Err("Unknown team.".into());
