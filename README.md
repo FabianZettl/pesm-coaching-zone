@@ -34,7 +34,7 @@ The game's memory only holds player ids. To show names, shirt numbers and positi
 pesm-coaching-zone --game "C:\Games\Football Life 2027"
 ```
 
-It reads `sider.ini` there and uses the database of the first mod in the `cpk.root` list that has one (`…/common/etc/pesdb/Player.bin`). You can also point at that folder directly with `--pesdb <folder>`. The choice is remembered.
+It reads `sider.ini` there (or in `SiderAddons/`) and uses the database of the first mod in the `cpk.root` list that has one (`…/common/etc/pesdb/Player.bin`). You can also point at that folder directly with `--pesdb <folder>`. The choice is remembered.
 
 ### Linux (Wine/Proton/Lutris)
 

@@ -149,8 +149,20 @@ impl Database {
 
 /// Finds the pesdb folder that the game actually uses: the first `cpk.root` line in
 /// `sider.ini` whose folder contains `common/etc/pesdb/Player.bin`.
+/// `sider.ini` may sit in the game folder or in `SiderAddons/` (FL27); `cpk.root` paths are
+/// relative to the folder of the ini.
 pub fn find_in_game_folder(game: &Path) -> Option<PathBuf> {
-    let ini = std::fs::read_to_string(game.join("sider.ini")).ok()?;
+    [
+        game.join("sider.ini"),
+        game.join("SiderAddons").join("sider.ini"),
+    ]
+    .iter()
+    .find_map(|ini| from_sider_ini(ini))
+}
+
+fn from_sider_ini(ini_path: &Path) -> Option<PathBuf> {
+    let ini = std::fs::read_to_string(ini_path).ok()?;
+    let base = ini_path.parent()?;
     for line in ini.lines() {
         let l = line.trim();
         if l.starts_with(';') || l.starts_with('#') {
@@ -166,7 +178,7 @@ pub fn find_in_game_folder(game: &Path) -> Option<PathBuf> {
         let root = if Path::new(&v).is_absolute() || v.contains(':') {
             PathBuf::from(&v)
         } else {
-            game.join(v.trim_start_matches("./"))
+            base.join(v.trim_start_matches("./"))
         };
         let db = root.join("common/etc/pesdb");
         if db.join("Player.bin").is_file() {
@@ -219,6 +231,22 @@ mod tests {
         assert_eq!(db.shirt_number(42, Some(396)), Some(9));
         assert_eq!(db.team_of(&[42]), Some(50)); // tie -> lower id
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn finds_pesdb_via_sideraddons_ini() {
+        let game = std::env::temp_dir().join(format!("cz-game-{}", std::process::id()));
+        let db = game.join("SiderAddons/livecpk/ModB/common/etc/pesdb");
+        std::fs::create_dir_all(&db).unwrap();
+        std::fs::create_dir_all(game.join("SiderAddons/livecpk/ModA")).unwrap();
+        std::fs::write(db.join("Player.bin"), b"x").unwrap();
+        std::fs::write(
+            game.join("SiderAddons/sider.ini"),
+            "; comment\ncpk.root = \".\\livecpk\\ModA\"\ncpk.root = \".\\livecpk\\ModB\"\n",
+        )
+        .unwrap();
+        assert_eq!(find_in_game_folder(&game), Some(db.clone()));
+        std::fs::remove_dir_all(&game).ok();
     }
 
     #[test]
