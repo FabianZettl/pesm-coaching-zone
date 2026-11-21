@@ -1,6 +1,7 @@
 //! Turns successive snapshots of the stats block into a live match view:
 //! score, events (goals, cards, substitutions), player and team stats.
 
+use crate::lineup::{Lineups, STATUS_DONE, STATUS_REQUESTED};
 use crate::pesdb::Database;
 use crate::stats::{PERIODS, SLOTS, STARTERS, Snapshot, kind};
 use serde::Serialize;
@@ -15,6 +16,22 @@ pub enum EventKind {
     SecondYellow,
     Red,
     Sub,
+    PenaltyMissed,
+    Chance,
+    ShotWide,
+    Corner,
+    FreeKick,
+    Offside,
+}
+
+impl EventKind {
+    /// Goals, cards, subs, penalties and saved chances. The rest is "all events" only.
+    pub fn key(&self) -> bool {
+        !matches!(
+            self,
+            EventKind::ShotWide | EventKind::Corner | EventKind::FreeKick | EventKind::Offside
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -26,6 +43,9 @@ pub struct Event {
     pub slot: usize,
     /// For goals: the assisting slot. For subs: the slot that went off (if known).
     pub other: Option<usize>,
+    /// For goals: 1 = penalty, 2 = free kick. For chances: the keeper's slot on the other side + 100.
+    pub detail: u32,
+    pub key: bool,
     pub text: String,
 }
 
@@ -40,6 +60,8 @@ struct PlayerState {
 }
 
 struct PendingSub {
+    /// Value of `moving[side]` when the sub came on.
+    moving_at: u64,
     side: usize,
     slot: usize,
     tick: u64,
@@ -53,6 +75,12 @@ pub struct Tracker {
     tick: u64,
     players: [Vec<PlayerState>; 2],
     pending: Vec<PendingSub>,
+    /// Per side: number of ticks in which the team's run counter grew (game not paused).
+    moving: [u64; 2],
+    /// The real line-up and substitution queue from memory, when found.
+    lineups: Option<Lineups>,
+    /// Whether substitutions can be requested (line-up found and writing allowed).
+    pub can_sub: bool,
     pub events: Vec<Event>,
     seq: u32,
     period_seen: [Option<Instant>; PERIODS],
@@ -77,6 +105,9 @@ impl Tracker {
                 vec![PlayerState::default(); SLOTS],
             ],
             pending: vec![],
+            moving: [0, 0],
+            lineups: None,
+            can_sub: false,
             events: vec![],
             seq: 0,
             period_seen: [None; PERIODS],
@@ -120,6 +151,7 @@ impl Tracker {
         let prev = self.prev.take();
         self.diff(prev.as_ref(), &s, first);
         self.resolve_pending(&s);
+        self.apply_lineups(&s, first);
         self.prev = Some(s);
     }
 
@@ -151,6 +183,7 @@ impl Tracker {
         other: Option<usize>,
     ) -> u32 {
         self.seq += 1;
+        let key = kind.key();
         self.events.push(Event {
             seq: self.seq,
             minute,
@@ -158,6 +191,8 @@ impl Tracker {
             kind,
             slot,
             other,
+            detail: 0,
+            key,
             text: String::new(),
         });
         self.seq
@@ -165,6 +200,13 @@ impl Tracker {
 
     fn diff(&mut self, prev: Option<&Snapshot>, s: &Snapshot, first: bool) {
         let cur = s.period();
+        if let Some(p) = prev {
+            for side in 0..2 {
+                if s.side_total(side, kind::RUN) > p.side_total(side, kind::RUN) {
+                    self.moving[side] += 1;
+                }
+            }
+        }
         for side in 0..2 {
             for slot in 0..SLOTS {
                 let Some(p) = &s.sides[side][slot] else {
@@ -186,7 +228,9 @@ impl Tracker {
                     if !first {
                         let minute = self.minute_in(cur, cur);
                         let seq = self.push(minute, side, EventKind::Sub, slot, None);
+                        let moving_at = self.moving[side];
                         self.pending.push(PendingSub {
+                            moving_at,
                             side,
                             slot,
                             tick: self.tick,
@@ -247,6 +291,59 @@ impl Tracker {
                         st.sent_off = true;
                         st.on = false;
                     }
+                    // Penalty and free-kick goals: mark the goal events just pushed.
+                    let (pg, fg) = (d(kind::PENALTY_GOAL), d(kind::FREE_KICK_GOAL));
+                    if pg + fg > 0 {
+                        let mut left = (pg, fg);
+                        for e in self.events.iter_mut().rev().take(d(kind::GOAL) as usize) {
+                            if e.kind == EventKind::Goal && e.side == side && e.slot == slot {
+                                if left.0 > 0 {
+                                    e.detail = 1;
+                                    left.0 -= 1;
+                                } else if left.1 > 0 {
+                                    e.detail = 2;
+                                    left.1 -= 1;
+                                }
+                            }
+                        }
+                    }
+                    if first {
+                        continue; // Don't replay the whole match's shots and corners on start-up.
+                    }
+                    let goals = d(kind::GOAL);
+                    let missed_pen = d(kind::PENALTY_SHOT).saturating_sub(d(kind::PENALTY_GOAL));
+                    let on = d(kind::SHOT_ON_TARGET).saturating_sub(goals);
+                    let wide = d(kind::SHOT).saturating_sub(d(kind::SHOT_ON_TARGET));
+                    let (wide, on) = {
+                        let from_wide = missed_pen.min(wide);
+                        (wide - from_wide, on.saturating_sub(missed_pen - from_wide))
+                    };
+                    for _ in 0..missed_pen {
+                        self.push(minute, side, EventKind::PenaltyMissed, slot, None);
+                    }
+                    for _ in 0..on {
+                        let keeper = (0..SLOTS).find(|&j| {
+                            s.sides[1 - side][j].as_ref().is_some_and(|q| {
+                                q.get(kind::SAVE, per)
+                                    > prev
+                                        .and_then(|x| x.sides[1 - side][j].as_ref())
+                                        .map_or(0, |o| o.get(kind::SAVE, per))
+                            })
+                        });
+                        self.push(minute, side, EventKind::Chance, slot, keeper);
+                    }
+                    for _ in 0..wide {
+                        self.push(minute, side, EventKind::ShotWide, slot, None);
+                    }
+                    for _ in 0..d(kind::CORNER) {
+                        self.push(minute, side, EventKind::Corner, slot, None);
+                    }
+                    for _ in 0..d(kind::FREE_KICK) {
+                        self.push(minute, side, EventKind::FreeKick, slot, None);
+                    }
+                    for _ in 0..d(kind::OFFSIDE) {
+                        self.push(minute, side, EventKind::Offside, slot, None);
+                    }
                 }
             }
         }
@@ -256,10 +353,11 @@ impl Tracker {
     /// A sub's "off" player is the one on the pitch whose run counter stopped when the sub came on,
     /// while the rest of the team kept running.
     fn resolve_pending(&mut self, s: &Snapshot) {
-        let tick = self.tick;
         let mut done = vec![];
         for (i, ps) in self.pending.iter().enumerate() {
-            if tick < ps.tick + 3 {
+            // Only count ticks in which the game was running; a paused game tells us nothing.
+            let ran = self.moving[ps.side] - ps.moving_at;
+            if ran < 3 {
                 continue;
             }
             let cands: Vec<usize> = (0..SLOTS)
@@ -273,14 +371,9 @@ impl Tracker {
                         && st.last_growth <= ps.tick
                 })
                 .collect();
-            let moving = (0..SLOTS)
-                .filter(|&j| {
-                    self.players[ps.side][j].on && self.players[ps.side][j].last_growth > ps.tick
-                })
-                .count();
-            if cands.len() == 1 && moving >= 5 {
+            if cands.len() == 1 {
                 done.push((i, Some(cands[0])));
-            } else if tick > ps.tick + 15 {
+            } else if ran > 30 {
                 done.push((i, None));
             }
         }
@@ -296,6 +389,60 @@ impl Tracker {
                 e.minute = ps.minute;
             }
         }
+    }
+
+    /// Sets the line-up read from memory for the next [`update`](Self::update).
+    pub fn set_lineups(&mut self, l: Option<Lineups>) {
+        self.lineups = l;
+    }
+
+    /// The real line-up beats the run-counter guesswork: who is on the pitch, and exact sub pairs.
+    fn apply_lineups(&mut self, s: &Snapshot, first: bool) {
+        let Some(l) = self.lineups.clone() else {
+            return;
+        };
+        let cur = s.period();
+        for side in 0..2 {
+            for slot in 0..SLOTS {
+                if s.sides[side][slot].is_none() {
+                    continue;
+                }
+                let on = l.xi[side].contains(&(slot as u32));
+                let st = &mut self.players[side][slot];
+                if st.sent_off {
+                    st.on = false;
+                    continue;
+                }
+                if st.on && !on {
+                    st.went_off = true;
+                }
+                if on && slot >= STARTERS {
+                    st.came_on = true;
+                }
+                st.on = on;
+            }
+            for e in l.queue[side].iter().filter(|e| e.status == STATUS_DONE) {
+                let (i, o) = (e.in_slot as usize, e.out_slot as usize);
+                if i >= SLOTS || o >= SLOTS {
+                    continue;
+                }
+                self.players[side][o].went_off = true;
+                self.players[side][o].on = false;
+                self.players[side][i].came_on = true;
+                self.pending.retain(|p| !(p.side == side && p.slot == i));
+                if let Some(ev) = self
+                    .events
+                    .iter_mut()
+                    .find(|ev| ev.kind == EventKind::Sub && ev.side == side && ev.slot == i)
+                {
+                    ev.other = Some(o);
+                } else {
+                    let minute = if first { 0 } else { self.minute_in(cur, cur) };
+                    self.push(minute, side, EventKind::Sub, i, Some(o));
+                }
+            }
+        }
+        self.events.sort_by_key(|e| (e.minute, e.seq));
     }
 
     pub fn snapshot(&self) -> Option<&Snapshot> {
@@ -377,10 +524,30 @@ impl Tracker {
                 let mut e = e.clone();
                 let n = name_of(e.side, e.slot);
                 e.text = match e.kind {
-                    EventKind::Goal => match e.other {
-                        Some(a) => format!("Goal! {n} scores, assist {}.", name_of(e.side, a)),
-                        None => format!("Goal! {n} scores."),
+                    EventKind::Goal => {
+                        let how = match e.detail {
+                            1 => " from the penalty spot",
+                            2 => " from a free kick",
+                            _ => "",
+                        };
+                        match e.other {
+                            Some(a) if e.detail != 1 => {
+                                format!("Goal! {n} scores{how}, assist {}.", name_of(e.side, a))
+                            }
+                            _ => format!("Goal! {n} scores{how}."),
+                        }
+                    }
+                    EventKind::PenaltyMissed => {
+                        format!("Penalty missed! {n} doesn't score from the spot.")
+                    }
+                    EventKind::Chance => match e.other {
+                        Some(k) => format!("Chance! {n} shoots, {} saves.", name_of(1 - e.side, k)),
+                        None => format!("Chance! {n} gets a shot on target."),
                     },
+                    EventKind::ShotWide => format!("{n} shoots wide."),
+                    EventKind::Corner => format!("Corner, taken by {n}."),
+                    EventKind::FreeKick => format!("Free kick, taken by {n}."),
+                    EventKind::Offside => format!("{n} is caught offside."),
                     EventKind::OwnGoal => format!("Own goal by {n}."),
                     EventKind::Yellow => format!("Yellow card for {n}."),
                     EventKind::SecondYellow => format!("Second yellow, {n} is sent off."),
@@ -480,6 +647,27 @@ impl Tracker {
             events,
             flow,
             last_seq: self.seq,
+            subs: SubsInfo {
+                available: self.can_sub && self.lineups.is_some(),
+                limit: self.lineups.as_ref().map_or([5, 5], |l| l.limit),
+                from_memory: self.lineups.is_some(),
+            },
+            subs_pending: self
+                .lineups
+                .iter()
+                .flat_map(|l| {
+                    (0..2).flat_map(move |side| {
+                        l.queue[side]
+                            .iter()
+                            .filter(|e| e.status == STATUS_REQUESTED)
+                            .map(move |e| PendingView {
+                                side,
+                                in_slot: e.in_slot,
+                                out_slot: e.out_slot,
+                            })
+                    })
+                })
+                .collect(),
         })
     }
 }
@@ -602,6 +790,24 @@ pub struct MatchView {
     pub events: Vec<Event>,
     pub flow: Vec<FlowRow>,
     pub last_seq: u32,
+    pub subs: SubsInfo,
+    /// Substitutions requested but not yet made by the game.
+    pub subs_pending: Vec<PendingView>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SubsInfo {
+    pub available: bool,
+    pub limit: [u8; 2],
+    /// True when the line-up comes from game memory (not guessed).
+    pub from_memory: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PendingView {
+    pub side: usize,
+    pub in_slot: u32,
+    pub out_slot: u32,
 }
 
 #[cfg(test)]
@@ -705,6 +911,140 @@ mod tests {
         s2.sides[0][0].as_mut().unwrap().id = 99;
         t.update(s2, now);
         assert!(t.events.is_empty());
+    }
+
+    #[test]
+    fn sub_resolved_after_pause() {
+        let mut t = Tracker::new();
+        let mut s = snap();
+        let mut now = Instant::now();
+        run_all(&mut s, 3, &[]);
+        t.update(s.clone(), now);
+        // Sub comes on while the game is paused for 20 ticks.
+        add(&mut s, 0, 14, kind::RUN, 3, 5);
+        for _ in 0..20 {
+            now += Duration::from_secs(2);
+            t.update(s.clone(), now);
+        }
+        for _ in 0..4 {
+            run_all(&mut s, 3, &[(0, 6)]);
+            now += Duration::from_secs(2);
+            t.update(s.clone(), now);
+        }
+        let v = t.view(None).unwrap();
+        assert_eq!(
+            v.events
+                .iter()
+                .find(|e| e.kind == EventKind::Sub)
+                .unwrap()
+                .other,
+            Some(6)
+        );
+        assert!(
+            !v.players
+                .iter()
+                .find(|p| p.side == 0 && p.slot == 6)
+                .unwrap()
+                .on_pitch
+        );
+    }
+
+    #[test]
+    fn ticker_chances_corners_penalties() {
+        let mut t = Tracker::new();
+        let mut s = snap();
+        let now = Instant::now();
+        run_all(&mut s, 0, &[]);
+        t.update(s.clone(), now);
+        // Saved shot by home 9, keeper away 0 saves.
+        add(&mut s, 0, 9, kind::SHOT, 1, 1);
+        add(&mut s, 0, 9, kind::SHOT_ON_TARGET, 1, 1);
+        add(&mut s, 1, 0, kind::SAVE, 1, 1);
+        add(&mut s, 0, 7, kind::CORNER, 1, 1);
+        // Away 10: penalty scored; away 9: penalty missed (wide).
+        add(&mut s, 1, 10, kind::SHOT, 1, 1);
+        add(&mut s, 1, 10, kind::SHOT_ON_TARGET, 1, 1);
+        add(&mut s, 1, 10, kind::PENALTY_SHOT, 1, 1);
+        add(&mut s, 1, 10, kind::GOAL, 1, 1);
+        add(&mut s, 1, 10, kind::PENALTY_GOAL, 1, 1);
+        add(&mut s, 1, 9, kind::SHOT, 1, 1);
+        add(&mut s, 1, 9, kind::PENALTY_SHOT, 1, 1);
+        run_all(&mut s, 1, &[]);
+        t.update(s.clone(), now);
+        let v = t.view(None).unwrap();
+        let k: Vec<_> = v
+            .events
+            .iter()
+            .map(|e| (e.kind.clone(), e.side, e.slot, e.detail, e.key))
+            .collect();
+        assert!(k.contains(&(EventKind::Chance, 0, 9, 0, true)), "{k:?}");
+        assert!(k.contains(&(EventKind::Corner, 0, 7, 0, false)));
+        assert!(k.contains(&(EventKind::Goal, 1, 10, 1, true)));
+        assert!(k.contains(&(EventKind::PenaltyMissed, 1, 9, 0, true)));
+        assert!(
+            !k.iter().any(|e| e.0 == EventKind::ShotWide),
+            "missed penalty must not also be a wide shot"
+        );
+        let chance = v
+            .events
+            .iter()
+            .find(|e| e.kind == EventKind::Chance)
+            .unwrap();
+        assert_eq!(chance.other, Some(0));
+        assert!(
+            v.events
+                .iter()
+                .any(|e| e.text.contains("from the penalty spot"))
+        );
+    }
+
+    #[test]
+    fn lineup_from_memory_wins() {
+        use crate::lineup::{Lineups, QueueEntry};
+        let free = QueueEntry {
+            in_slot: 0xff,
+            out_slot: 0xff,
+            status: 0,
+        };
+        let mut t = Tracker::new();
+        let mut s = snap();
+        let now = Instant::now();
+        run_all(&mut s, 3, &[]);
+        // Started mid-match: slot 14 already played, slot 6 went off. Game paused.
+        add(&mut s, 0, 14, kind::RUN, 3, 50);
+        let mut xi: Vec<u32> = (0..11).collect();
+        xi[6] = 14;
+        let mut q = vec![free; 6];
+        q[0] = QueueEntry {
+            in_slot: 14,
+            out_slot: 6,
+            status: STATUS_DONE,
+        };
+        q[1] = QueueEntry {
+            in_slot: 15,
+            out_slot: 2,
+            status: STATUS_REQUESTED,
+        };
+        t.set_lineups(Some(Lineups {
+            xi: [xi, (0..11).collect()],
+            queue: [q, vec![free; 6]],
+            limit: [5, 5],
+        }));
+        t.can_sub = true;
+        t.update(s.clone(), now);
+        let v = t.view(None).unwrap();
+        let on: Vec<usize> = v
+            .players
+            .iter()
+            .filter(|p| p.side == 0 && p.on_pitch)
+            .map(|p| p.slot)
+            .collect();
+        assert_eq!(on.len(), 11);
+        assert!(on.contains(&14) && !on.contains(&6));
+        let sub = v.events.iter().find(|e| e.kind == EventKind::Sub).unwrap();
+        assert_eq!((sub.slot, sub.other), (14, Some(6)));
+        assert_eq!(v.subs_pending.len(), 1);
+        assert!(v.subs.available && v.subs.from_memory);
     }
 
     #[test]

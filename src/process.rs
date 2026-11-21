@@ -17,6 +17,14 @@ pub struct Region {
 pub trait Memory {
     fn read(&self, addr: u64, len: usize) -> Option<Vec<u8>>;
     fn regions(&self) -> Vec<Region>;
+    /// Writes bytes into the game. Only used for substitutions. Returns false if not allowed.
+    fn write(&self, _addr: u64, _bytes: &[u8]) -> bool {
+        false
+    }
+    /// Whether the process was opened with write access.
+    fn can_write(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -28,6 +36,7 @@ mod imp {
     pub struct GameProcess {
         pub pid: u32,
         mem: File,
+        writable: bool,
     }
 
     impl GameProcess {
@@ -60,8 +69,20 @@ mod imp {
             let Some((pid, _)) = best else {
                 return Ok(None);
             };
-            match File::open(format!("/proc/{pid}/mem")) {
-                Ok(mem) => Ok(Some(Self { pid, mem })),
+            let path = format!("/proc/{pid}/mem");
+            if let Ok(mem) = File::options().read(true).write(true).open(&path) {
+                return Ok(Some(Self {
+                    pid,
+                    mem,
+                    writable: true,
+                }));
+            }
+            match File::open(&path) {
+                Ok(mem) => Ok(Some(Self {
+                    pid,
+                    mem,
+                    writable: false,
+                })),
                 Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => bail!(
                     "FL27 is running (pid {pid}), but Linux does not allow reading its memory.\n\
                      Fix it once with:\n  sudo setcap cap_sys_ptrace+ep \"{}\"\n\
@@ -82,6 +103,14 @@ mod imp {
                 Ok(()) => Some(buf),
                 Err(_) => None,
             }
+        }
+
+        fn write(&self, addr: u64, bytes: &[u8]) -> bool {
+            self.writable && self.mem.write_all_at(bytes, addr).is_ok()
+        }
+
+        fn can_write(&self) -> bool {
+            self.writable
         }
 
         fn regions(&self) -> Vec<Region> {
@@ -117,7 +146,7 @@ mod imp {
 mod imp {
     use super::*;
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, STILL_ACTIVE};
-    use windows_sys::Win32::System::Diagnostics::Debug::ReadProcessMemory;
+    use windows_sys::Win32::System::Diagnostics::Debug::{ReadProcessMemory, WriteProcessMemory};
     use windows_sys::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
         TH32CS_SNAPPROCESS,
@@ -126,12 +155,14 @@ mod imp {
         MEM_COMMIT, MEMORY_BASIC_INFORMATION, PAGE_READWRITE, VirtualQueryEx,
     };
     use windows_sys::Win32::System::Threading::{
-        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_READ,
+        GetExitCodeProcess, OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION,
+        PROCESS_VM_READ, PROCESS_VM_WRITE,
     };
 
     pub struct GameProcess {
         pub pid: u32,
         h: HANDLE,
+        writable: bool,
     }
     unsafe impl Send for GameProcess {}
     unsafe impl Sync for GameProcess {}
@@ -173,13 +204,27 @@ mod imp {
                 found
             };
             let Some(pid) = pid else { return Ok(None) };
-            let h = unsafe { OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, 0, pid) };
+            let mut h = unsafe {
+                OpenProcess(
+                    PROCESS_VM_READ
+                        | PROCESS_QUERY_INFORMATION
+                        | PROCESS_VM_WRITE
+                        | PROCESS_VM_OPERATION,
+                    0,
+                    pid,
+                )
+            };
+            let mut writable = !h.is_null();
+            if h.is_null() {
+                h = unsafe { OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, 0, pid) };
+                writable = false;
+            }
             if h.is_null() {
                 bail!(
                     "FL27 is running (pid {pid}), but Windows refused access. Try starting PESM Coaching Zone as the same user as the game, or as administrator."
                 );
             }
-            Ok(Some(Self { pid, h }))
+            Ok(Some(Self { pid, h, writable }))
         }
     }
 
@@ -191,6 +236,24 @@ mod imp {
                 ReadProcessMemory(self.h, addr as _, buf.as_mut_ptr() as _, len, &mut got)
             };
             (ok != 0 && got == len).then_some(buf)
+        }
+
+        fn write(&self, addr: u64, bytes: &[u8]) -> bool {
+            let mut done = 0usize;
+            let ok = unsafe {
+                WriteProcessMemory(
+                    self.h,
+                    addr as _,
+                    bytes.as_ptr() as _,
+                    bytes.len(),
+                    &mut done,
+                )
+            };
+            ok != 0 && done == bytes.len()
+        }
+
+        fn can_write(&self) -> bool {
+            self.writable
         }
 
         fn regions(&self) -> Vec<Region> {

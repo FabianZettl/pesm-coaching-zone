@@ -3,6 +3,7 @@
 //!
 //! The reading parts (`process`, `stats`, `pesdb`, `live`) are usable as a library.
 
+pub mod lineup;
 pub mod live;
 pub mod pesdb;
 pub mod process;

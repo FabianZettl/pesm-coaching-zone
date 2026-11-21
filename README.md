@@ -11,15 +11,16 @@ You play FL27 full screen on your PC. Your phone sits next to you and shows the 
 </p>
 
 - **Match:** score, scorers, the latest goals, cards and substitutions, best player so far
-- **XI:** both line-ups on a pitch with live ratings. Tap a shirt for the player's stats. Bench and subs are included.
+- **XI:** the eleven players actually on the pitch, with live ratings. Tap a shirt for the player's stats. Bench and subs are included.
+- **Substitutions from the phone:** tap one of your players, pick one of three suggested bench players (or look at the whole bench), confirm. FL27 makes the change at the next stoppage, just like a sub from the pause menu.
 - **Stats:** shots, xG, passes, pass accuracy, duels, corners, fouls, cards and saves, plus the flow per 15 minutes and a player table
-- **Ticker:** every goal, card and substitution
-- **Vibration** when a goal or a card happens
+- **Ticker:** goals (incl. penalties and free kicks), missed penalties, big chances, cards and substitutions. Switch to "Everything" to also see corners, free kicks, offsides and shots wide.
+- **Vibration** when a goal, a card or a missed penalty happens
 - Light and dark theme
 
 It runs in the phone's browser, so you don't install an app. Nothing goes to the internet: the PC and the phone talk only inside your home network.
 
-> Unofficial fan tool. Not affiliated with or endorsed by Konami or the Football Life team. It only **reads** the game's memory while you play and never changes the game, its files or your saves.
+> Unofficial fan tool. Not affiliated with or endorsed by Konami or the Football Life team. It reads the game's memory while you play. The only thing it ever writes is a substitution you ask for on the phone (turn that off with `--no-subs`). It never changes the game's files or your saves.
 
 ## Quick start
 
@@ -44,7 +45,7 @@ It reads `sider.ini` there (or in `SiderAddons/`) and uses the database of the f
 
 ### Linux (Wine/Proton/Lutris)
 
-Linux only lets a program read another program's memory if you allow it. Do this once:
+Linux only lets a program read (and, for substitutions, write) another program's memory if you allow it. Do this once, and again after each update of the file:
 
 ```
 sudo setcap cap_sys_ptrace+ep ./pesm-coaching-zone-linux-x86_64
@@ -56,6 +57,8 @@ Or, until the next reboot only: `sudo sysctl kernel.yama.ptrace_scope=0`
 
 Windows may ask whether the program may use the network. Allow **private networks**, otherwise your phone can't connect.
 
+Substitutions from the phone need the same rights as the game. If the PC window says "Substitutions from the phone are off" although you didn't turn them off, start PESM Coaching Zone as the same user as the game (or as administrator).
+
 ## Options
 
 ```
@@ -64,6 +67,7 @@ Windows may ask whether the program may use the network. Allow **private network
 --port <number>    Port for the phone page (default 8317).
 --demo             Play a made-up match, no game needed.
 --no-browser       Don't open the PC page in the browser.
+--no-subs          Read only: don't allow substitutions from the phone.
 ```
 
 ## What it can and can't know
@@ -73,7 +77,9 @@ FL27 keeps a statistics record per player and per 15-minute period in memory. PE
 - **Confirmed in real matches:** goals (incl. free kicks and penalties), own goals, assists, shots, shots on target, passes (short, through, long), crosses, duels won, interceptions, fouls, offsides, yellow and red cards, free kicks, corners, touches, saves.
 - **The minute is an estimate.** The game clock is not stored in a readable way. The program knows the 15-minute period and estimates the minute inside it from how long periods take on your PC.
 - **Possession is not stored.** The bar under the score shows the share of ball touches in the current period instead.
-- **Substitutions** are detected when a bench player starts playing. The player who went off is found by who stopped running.
+- **Line-ups and substitutions** come from the game's live line-up and its substitution queue, so the XI tab shows exactly who is on the pitch. If that part of memory can't be found, the program falls back to guessing: a sub is detected when a bench player starts playing, and the player who went off is the one who stopped running.
+- **How a sub from the phone works:** the program puts the change into FL27's own substitution queue, the same place the pause menu uses. FL27 checks and carries it out at the next stoppage. The program refuses players who aren't on the pitch or on the bench, and stops when no substitutions are left.
+- **Big chances** are shots on target that the keeper saved. A missed penalty is a penalty shot without a goal.
 - **Ratings** are a simple formula, not the game's own rating.
 - **Supported game version:** `FL_2027.exe` 1.00. A game update can move things in memory. If the stats stop showing up, please open an issue.
 
@@ -91,7 +97,7 @@ cargo build --release
 cargo test
 ```
 
-The reading code is a library (`process`, `stats`, `pesdb`, `live`) that other tools can use.
+The reading code is a library (`process`, `stats`, `lineup`, `pesdb`, `live`) that other tools can use.
 
 ## Credits
 

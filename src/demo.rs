@@ -1,8 +1,12 @@
 //! Demo mode: a made-up match so the phone page can be tried without the game.
 
+use pesm_coaching_zone::lineup::{Lineups, QueueEntry, STATUS_DONE};
 use pesm_coaching_zone::pesdb::{self, Database, PlayerInfo};
 use pesm_coaching_zone::stats::{KINDS, PERIODS, SLOTS, STARTERS, Slot, Snapshot, kind};
 use rand::RngExt;
+
+/// Substitutions per side in the demo.
+const SUB_LIMIT: u8 = 5;
 
 const HOME: [(&str, &str); 18] = [
     ("Hale", "GK"),
@@ -85,6 +89,7 @@ pub struct DemoMatch {
     step: u32,
     on: [Vec<usize>; 2],
     bench: [Vec<usize>; 2],
+    queue: [Vec<QueueEntry>; 2],
 }
 
 /// Steps per period (one step per 2 s tick, so one period is ~40 s).
@@ -115,7 +120,43 @@ impl DemoMatch {
             step: 0,
             on: [(0..STARTERS).collect(), (0..STARTERS).collect()],
             bench: [(STARTERS..18).collect(), (STARTERS..18).collect()],
+            queue: [vec![], vec![]],
         }
+    }
+
+    /// The demo's line-ups, shaped like the ones read from FL27's memory.
+    pub fn lineups(&self) -> Lineups {
+        Lineups {
+            xi: [0, 1].map(|s| self.on[s].iter().map(|x| *x as u32).collect()),
+            queue: self.queue.clone(),
+            limit: [SUB_LIMIT; 2],
+        }
+    }
+
+    /// A substitution asked for on the phone. The demo makes it at once.
+    pub fn substitute(&mut self, side: usize, out_slot: u32, in_slot: u32) -> Result<(), String> {
+        let (out, inn) = (out_slot as usize, in_slot as usize);
+        if side > 1 {
+            return Err("Unknown team.".into());
+        }
+        if self.queue[side].len() >= SUB_LIMIT as usize {
+            return Err("No substitutions left.".into());
+        }
+        let Some(oi) = self.on[side].iter().position(|s| *s == out) else {
+            return Err("That player is not on the pitch.".into());
+        };
+        let Some(bi) = self.bench[side].iter().position(|s| *s == inn) else {
+            return Err("That player is not on the bench.".into());
+        };
+        self.bench[side].remove(bi);
+        self.on[side][oi] = inn;
+        self.add(side, inn, kind::RUN, 0, 0);
+        self.queue[side].push(QueueEntry {
+            in_slot,
+            out_slot,
+            status: STATUS_DONE,
+        });
+        Ok(())
     }
 
     fn add(&mut self, side: usize, slot: usize, k: usize, per: usize, v: u32) {
@@ -205,15 +246,11 @@ impl DemoMatch {
                     1,
                 );
             }
-            // Substitutions in the second half.
-            if per >= 3 && self.on[side].len() == STARTERS && rng.random_bool(0.03) {
-                let out_i = rng.random_range(5..STARTERS);
-                if let Some(inn) = self.bench[side].iter().position(|s| *s != 11) {
-                    let inn = self.bench[side].remove(inn);
-                    let out = self.on[side][out_i];
-                    self.on[side][out_i] = inn;
-                    self.add(side, inn, kind::RUN, per, 3);
-                    let _ = out;
+            // The away side makes one substitution in the second half.
+            if side == 1 && per >= 3 && self.queue[side].is_empty() && rng.random_bool(0.03) {
+                let out = self.on[side][rng.random_range(5..STARTERS)];
+                if let Some(&inn) = self.bench[side].iter().find(|s| **s != 11) {
+                    let _ = self.substitute(side, out as u32, inn as u32);
                 }
             }
         }

@@ -35,6 +35,16 @@ pub struct Shared {
     pub live: watch::Receiver<Live>,
     pub phones: Mutex<usize>,
     pub failures: Mutex<(u32, Option<Instant>)>,
+    /// Substitution requests go to the reader thread, which owns the game process.
+    pub subs: Mutex<std::sync::mpsc::Sender<SubCmd>>,
+}
+
+/// A substitution asked for on the phone. `out_slot` and `in_slot` are squad slots (0..40).
+pub struct SubCmd {
+    pub side: usize,
+    pub out_slot: u32,
+    pub in_slot: u32,
+    pub reply: tokio::sync::oneshot::Sender<Result<(), String>>,
 }
 
 pub fn router(shared: Arc<Shared>) -> Router {
@@ -46,6 +56,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
         .route("/pair", post(pair))
         .route("/ws", get(ws))
         .route("/check", get(check))
+        .route("/sub", post(sub))
         .route("/fonts/{name}", get(font))
         .with_state(shared)
 }
@@ -163,6 +174,66 @@ async fn check(Query(q): Query<WsQuery>, State(s): State<Arc<Shared>>) -> Status
         StatusCode::OK
     } else {
         StatusCode::UNAUTHORIZED
+    }
+}
+
+#[derive(Deserialize)]
+struct SubReq {
+    k: String,
+    side: usize,
+    out_slot: u32,
+    in_slot: u32,
+}
+
+#[derive(Serialize)]
+struct SubAnswer {
+    ok: bool,
+    message: String,
+}
+
+async fn sub(State(s): State<Arc<Shared>>, Json(req): Json<SubReq>) -> Response {
+    let answer = |code: StatusCode, ok: bool, message: &str| {
+        (
+            code,
+            Json(SubAnswer {
+                ok,
+                message: message.into(),
+            }),
+        )
+            .into_response()
+    };
+    if req.k != s.token {
+        return answer(StatusCode::UNAUTHORIZED, false, "This phone is not paired.");
+    }
+    if req.side > 1 || req.out_slot >= 40 || req.in_slot >= 40 {
+        return answer(StatusCode::BAD_REQUEST, false, "Unknown player.");
+    }
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let cmd = SubCmd {
+        side: req.side,
+        out_slot: req.out_slot,
+        in_slot: req.in_slot,
+        reply: tx,
+    };
+    if s.subs.lock().unwrap().send(cmd).is_err() {
+        return answer(
+            StatusCode::SERVICE_UNAVAILABLE,
+            false,
+            "The reader on your PC stopped.",
+        );
+    }
+    match tokio::time::timeout(Duration::from_secs(5), rx).await {
+        Ok(Ok(Ok(()))) => answer(
+            StatusCode::OK,
+            true,
+            "Substitution requested. FL27 makes the change at the next stoppage.",
+        ),
+        Ok(Ok(Err(e))) => answer(StatusCode::CONFLICT, false, &e),
+        _ => answer(
+            StatusCode::GATEWAY_TIMEOUT,
+            false,
+            "Your PC did not answer in time.",
+        ),
     }
 }
 
