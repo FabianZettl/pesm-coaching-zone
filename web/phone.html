@@ -276,10 +276,15 @@ function render(){
 }
 function spieler(m,side,slot){for(var i=0;i<m.players.length;i++){var p=m.players[i];if(p.side===side&&p.slot===slot)return p}return null}
 
+function wartend(m,side){
+  var w=(m.subs_pending||[]).filter(function(x){return side==null||x.side===side});
+  if(!w.length)return "";
+  return '<section class="karte" style="border:2px solid var(--b-presse)"><div class="k-kopf kf-presse"><h2 class="titel">Sub waiting</h2><small>comes at the next stoppage</small></div><div class="k-in">'+w.map(function(x){var i=spieler(m,x.side,x.in_slot),o=spieler(m,x.side,x.out_slot);return '<div class="hinweis-z">'+esc(i?i.name:"?")+" on for "+esc(o?o.name:"?")+'</div>'}).join("")+'<div class="leer" style="font-size:13px">Requested. FL27 makes the change when the ball goes out or the referee stops play.</div></div></section>';
+}
 function tabMatch(m,d){
   var letzte=m.events.filter(function(e){return e.key}).slice(-4).reverse();
   var top=m.players.filter(function(p){return p.rating!=null}).sort(function(a,b){return b.rating-a.rating})[0];
-  var h='<section class="karte"><div class="k-kopf kf-presse"><h2 class="titel">Latest</h2><small>read from game memory</small></div><div class="k-in">'+(letzte.length?letzte.map(function(e){return evZeile(e,m)}).join(""):'<div class="leer">No goals, cards or subs yet.</div>')+"</div></section>";
+  var h=wartend(m,null)+'<section class="karte"><div class="k-kopf kf-presse"><h2 class="titel">Latest</h2><small>read from game memory</small></div><div class="k-in">'+(letzte.length?letzte.map(function(e){return evZeile(e,m)}).join(""):'<div class="leer">No goals, cards or subs yet.</div>')+"</div></section>";
   if(top)h+='<section class="karte"><div class="k-kopf kf-finanzen"><h2 class="titel">Best on the pitch</h2><small>rating so far</small></div><div class="k-in"><div class="detail"><div class="oben"><span class="trikot" style="position:relative;width:34px;height:34px;display:inline-block">'+trikot(top.side,top.number,top.position==="GK")+'</span><div style="flex:1;min-width:0"><h3 class="titel">'+esc(top.name)+'</h3><div style="color:var(--text2);font-size:13.5px">'+posmarke(top.position)+" "+esc(top.side===0?m.home:m.away)+"</div></div>"+note(top.rating)+"</div></div></div></section>";
   var r=function(l){for(var i=0;i<m.team_stats.length;i++)if(m.team_stats[i].label===l)return m.team_stats[i];return {home:0,away:0}};
   h+='<section class="karte"><div class="k-kopf kf-training"><h2 class="titel">At a glance</h2><small>'+esc(m.home)+" · "+esc(m.away)+'</small></div><div class="k-in">'+stz("Shots",r("Shots").home,r("Shots").away)+stz("On target",r("On target").home,r("On target").away)+stz("xG (simple)",m.xg[0],m.xg[1],true)+stz("Pass accuracy %",r("Pass accuracy %").home,r("Pass accuracy %").away)+"</div></section>";
@@ -318,6 +323,7 @@ function tabXI(m){
   var gew=S.gew!=null?spieler(m,side,S.gew):null;
   var h='<div class="seg"><button class="pille" data-seite="0" aria-pressed="'+(side===0)+'">'+esc(m.home)+'</button><button class="pille" data-seite="1" aria-pressed="'+(side===1)+'">'+esc(m.away)+"</button></div>";
   if(m.subs&&m.subs.available&&S.mein==null)h+='<section class="karte"><div class="k-kopf kf-presse"><h2 class="titel">Which team is yours?</h2><small>for substitutions</small></div><div class="k-in"><div class="knopfreihe"><button class="knopf zweit" data-mein="0">'+esc(m.home)+'</button><button class="knopf zweit" data-mein="1">'+esc(m.away)+"</button></div></div></section>";
+  h+=wartend(m,side);
   if(S.wechsel&&side===meineSeite(m))h+=wechselKarte(m);else if(gew)h+=detail(gew,m);
   h+='<section class="karte"><div class="k-kopf kf-heim" style="background:'+farbe(side)+'"><h2 class="titel">'+esc(team)+'</h2><small>tap a shirt for details</small></div><div class="k-in"><div class="feld"><svg class="linien" viewBox="0 0 68 92" preserveAspectRatio="none" fill="none" stroke="rgba(255,255,255,.45)" stroke-width=".5"><rect x="2" y="2" width="64" height="88"/><line x1="2" y1="46" x2="66" y2="46"/><circle cx="34" cy="46" r="8"/><rect x="16" y="2" width="36" height="14"/><rect x="16" y="76" width="36" height="14"/><rect x="26" y="2" width="16" height="5"/><rect x="26" y="85" width="16" height="5"/></svg>';
   aufstellung(auf).forEach(function(o){var p=o.p;
