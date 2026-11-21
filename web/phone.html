@@ -331,13 +331,13 @@ function stz(l,a,b,dez){var s=(+a)+(+b),pa=s?a/s*100:50;
 // Rows on the pitch (0 = goal line). x: -1 left, 0 centre, 1 right.
 var SIDEX={LB:-1,LMF:-1,LWF:-1,RB:1,RMF:1,RWF:1};
 function aufstellung(liste){
-  var hatPos=liste.every(function(p){return p.position});
+  var hatPos=liste.every(function(p){return (p.role||p.position)});
   var g=function(f){return liste.filter(f)};
   var reihen;
   if(hatPos){
-    var gk=g(function(p){return p.position==="GK"}),ab=g(function(p){return ["CB","LB","RB"].indexOf(p.position)>=0});
-    var dm=g(function(p){return p.position==="DMF"}),cm=g(function(p){return ["CMF","LMF","RMF"].indexOf(p.position)>=0});
-    var am=g(function(p){return p.position==="AMF"}),st=g(function(p){return ["LWF","RWF","SS","CF"].indexOf(p.position)>=0});
+    var gk=g(function(p){return (p.role||p.position)==="GK"}),ab=g(function(p){return ["CB","LB","RB"].indexOf((p.role||p.position))>=0});
+    var dm=g(function(p){return (p.role||p.position)==="DMF"}),cm=g(function(p){return ["CMF","LMF","RMF"].indexOf((p.role||p.position))>=0});
+    var am=g(function(p){return (p.role||p.position)==="AMF"}),st=g(function(p){return ["LWF","RWF","SS","CF"].indexOf((p.role||p.position))>=0});
     reihen=[gk,ab];
     if(dm.length+cm.length<=4)reihen.push(dm.concat(cm));else{reihen.push(dm);reihen.push(cm)}
     if(am.length+st.length<=3)reihen.push(am.concat(st));else{reihen.push(am);reihen.push(st)}
@@ -346,7 +346,7 @@ function aufstellung(liste){
   }
   reihen=reihen.filter(function(r){return r.length});
   var out=[],n=reihen.length;
-  reihen.forEach(function(row,ri){row=row.slice().sort(function(a,b){return (SIDEX[a.position]||0)-(SIDEX[b.position]||0)||a.slot-b.slot});
+  reihen.forEach(function(row,ri){row=row.slice().sort(function(a,b){return (SIDEX[(a.role||a.position)]||0)-(SIDEX[(b.role||b.position)]||0)||a.slot-b.slot});
     var y=n>1?90-ri*(76/(n-1)):50;row.forEach(function(p,i){out.push({p:p,x:(i+1)/(row.length+1)*100,y:y})})});
   return out;
 }
@@ -385,7 +385,7 @@ function bankFrei(m,side){
   return m.players.filter(function(q){return q.side===side&&!q.on_pitch&&!q.came_on&&!q.went_off&&!q.sent_off&&weg.indexOf(q.slot)<0});
 }
 function passt(raus,q){
-  var a=raus.position,b=q.position;
+  var a=raus.role||raus.position,b=q.position;
   if(!a||!b)return {s:1,w:"Bench player"};
   if(a===b)return {s:10,w:"Same position ("+b+")"};
   if(a==="GK"||b==="GK")return {s:-10,w:b==="GK"?"Goalkeeper":"Outfield player"};
@@ -400,7 +400,7 @@ function wechselKarte(m){
   var raus=spieler(m,meineSeite(m),S.wechsel.raus);if(!raus){S.wechsel=null;return ""}
   var lim=(m.subs.limit&&m.subs.limit[raus.side])||5,left=lim-subsUsed(m,raus.side);
   var h='<section class="karte" style="border:2px solid var(--b-presse)"><div class="k-kopf kf-presse"><h2 class="titel">Substitution</h2><small>'+Math.max(0,left)+" of "+lim+' left</small></div><div class="k-in">';
-  h+='<div class="detail"><div class="oben"><span class="trikot">'+trikot(raus.side,raus.number,raus.position==="GK")+'</span><div style="flex:1;min-width:0"><h3 class="titel">'+esc(raus.name)+' off</h3><div style="font-size:13.5px;color:var(--text2)">'+posmarke(raus.position)+"</div></div>"+note(raus.rating)+"</div></div>";
+  h+='<div class="detail"><div class="oben"><span class="trikot">'+trikot(raus.side,raus.number,raus.position==="GK")+'</span><div style="flex:1;min-width:0"><h3 class="titel">'+esc(raus.name)+' off</h3><div style="font-size:13.5px;color:var(--text2)">'+posmarke(raus.role||raus.position)+"</div></div>"+note(raus.rating)+"</div></div>";
   if(S.wechsel.rein!=null){var q=spieler(m,raus.side,S.wechsel.rein);
     h+='<div class="hinweis-z" style="font-size:16px">Bring on <b>'+esc(q.name)+"</b> for <b>"+esc(raus.name)+'</b>?<br><span style="font-size:13.5px;color:var(--text2)">FL27 makes the change at the next stoppage, like a sub from the menu.</span></div><div class="knopfreihe"><button class="knopf" data-ok="1">Confirm</button><button class="knopf zweit" data-abbruch="1">Cancel</button></div>';
     return h+"</div></section>"}

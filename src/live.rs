@@ -495,6 +495,7 @@ impl Tracker {
                 full_name: info.map(|i| i.name.clone()).unwrap_or_default(),
                 number,
                 position: info.and_then(|i| i.position),
+                role: info.and_then(|i| i.position),
                 starter: slot < STARTERS,
                 on_pitch: st.on,
                 came_on: st.came_on,
@@ -515,6 +516,39 @@ impl Tracker {
                 red: p.total(kind::RED),
                 saves: p.total(kind::SAVE),
             });
+        }
+        // Places on the pitch. FL27's live XI keeps the formation order: index i is the place
+        // the starter in slot i had. Without it, a sub takes the place of the player he replaced.
+        let start_pos = |side: usize, slot: usize| {
+            players
+                .iter()
+                .find(|p| p.side == side && p.slot == slot)
+                .and_then(|p| p.position)
+        };
+        let mut roles = vec![];
+        for (i, pl) in players.iter().enumerate() {
+            let from_xi = self.lineups.as_ref().and_then(|l| {
+                let k = l.xi[pl.side].iter().position(|&x| x as usize == pl.slot)?;
+                l.roles[pl.side]
+                    .get(k)
+                    .copied()
+                    .or_else(|| start_pos(pl.side, k))
+            });
+            let from_sub = || {
+                self.events
+                    .iter()
+                    .rev()
+                    .find(|e| e.kind == EventKind::Sub && e.side == pl.side && e.slot == pl.slot)
+                    .and_then(|e| e.other)
+                    .and_then(|o| start_pos(pl.side, o))
+            };
+            let role = from_xi.or_else(|| if pl.came_on { from_sub() } else { None });
+            if let Some(r) = role {
+                roles.push((i, r));
+            }
+        }
+        for (i, r) in roles {
+            players[i].role = Some(r);
         }
         let name_of = |side: usize, slot: usize| {
             players
@@ -742,6 +776,8 @@ pub struct PlayerView {
     pub full_name: String,
     pub number: Option<u32>,
     pub position: Option<&'static str>,
+    /// Where the player plays now: a sub takes over the place of the player he replaced.
+    pub role: Option<&'static str>,
     pub starter: bool,
     pub on_pitch: bool,
     pub came_on: bool,
@@ -1034,6 +1070,7 @@ mod tests {
             xi: [xi, (0..11).collect()],
             queue: [q, vec![free; 6]],
             limit: [5, 5],
+            roles: [vec![], vec![]],
         }));
         t.can_sub = true;
         t.update(s.clone(), now);

@@ -130,6 +130,7 @@ impl DemoMatch {
             xi: [0, 1].map(|s| self.on[s].iter().map(|x| *x as u32).collect()),
             queue: self.queue.clone(),
             limit: [SUB_LIMIT; 2],
+            roles: [vec![], vec![]],
         }
     }
 

@@ -45,7 +45,16 @@ pub struct Lineups {
     pub xi: [Vec<u32>; 2],
     pub queue: [Vec<QueueEntry>; 2],
     pub limit: [u8; 2],
+    /// Role of each formation place (index into `xi`), as a PES position name.
+    /// Read for the home team; the away team's roles are not located yet (empty).
+    pub roles: [Vec<&'static str>; 2],
 }
+
+/// Roles per formation place: u8[11] right after the live XI (home team).
+pub const ROLES: u64 = 0x68;
+const ROLE_NAMES: [&str; 13] = [
+    "GK", "CB", "LB", "RB", "DMF", "CMF", "LMF", "RMF", "AMF", "LWF", "RWF", "SS", "CF",
+];
 
 fn team_ok(b: &[u8]) -> bool {
     if b.len() < TEAM_LEN {
@@ -150,6 +159,14 @@ pub fn find(mem: &dyn Memory) -> Vec<u64> {
     out
 }
 
+fn roles(b: &[u8]) -> Vec<&'static str> {
+    if b.iter().all(|&r| (r as usize) < ROLE_NAMES.len()) && b[0] == 0 {
+        b.iter().map(|&r| ROLE_NAMES[r as usize]).collect()
+    } else {
+        vec![]
+    }
+}
+
 pub fn read(mem: &dyn Memory, home: u64) -> Option<Lineups> {
     let b = mem.read(home, QUEUE[1] as usize + QUEUE_LEN * 12)?;
     let away = AWAY as usize;
@@ -167,6 +184,7 @@ pub fn read(mem: &dyn Memory, home: u64) -> Option<Lineups> {
         xi: [xi(0), xi(away)],
         queue: [q(0), q(1)],
         limit: [lim(0), lim(1)],
+        roles: [roles(&b[ROLES as usize..ROLES as usize + 11]), vec![]],
     };
     (queue_ok(&l.queue[0]) && queue_ok(&l.queue[1])).then_some(l)
 }
