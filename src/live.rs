@@ -651,6 +651,7 @@ impl Tracker {
         Some(MatchView {
             home: team_name(0),
             away: team_name(1),
+            colors: db.map_or([None, None], |d| d.team_colors(teams)),
             score,
             period: cur,
             minute: self.minute_in(cur, cur),
@@ -687,7 +688,7 @@ impl Tracker {
             flow,
             last_seq: self.seq,
             subs: SubsInfo {
-                available: self.can_sub && self.lineups.is_some(),
+                available: self.lineups.is_some(),
                 limit: self.lineups.as_ref().map_or([5, 5], |l| l.limit),
                 from_memory: self.lineups.is_some(),
             },
@@ -818,6 +819,8 @@ pub struct FlowRow {
 pub struct MatchView {
     pub home: String,
     pub away: String,
+    /// Team colours from the mod's kits (`#rrggbb`), if known.
+    pub colors: [Option<String>; 2],
     pub score: [u32; 2],
     pub period: usize,
     pub minute: u32,

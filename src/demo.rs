@@ -76,6 +76,23 @@ pub fn database() -> Database {
                 .insert(id, vec![(team, if i == 0 { 1 } else { i as u32 + 1 })]);
         }
     }
+    // Sunderland red and white, Leeds white (so the blue second colour is used).
+    db.kits.insert(
+        9000,
+        vec![pesdb::Kit {
+            kind: 0,
+            color1: [0xd4, 0x15, 0x2f],
+            color2: [0xff, 0xff, 0xff],
+        }],
+    );
+    db.kits.insert(
+        9001,
+        vec![pesdb::Kit {
+            kind: 0,
+            color1: [0xf4, 0xf4, 0xf4],
+            color2: [0x1d, 0x42, 0x8a],
+        }],
+    );
     db
 }
 
@@ -134,8 +151,8 @@ impl DemoMatch {
         }
     }
 
-    /// A substitution asked for on the phone. The demo makes it at once.
-    pub fn substitute(&mut self, side: usize, out_slot: u32, in_slot: u32) -> Result<(), String> {
+    /// Makes a substitution at once.
+    fn substitute(&mut self, side: usize, out_slot: u32, in_slot: u32) -> Result<(), String> {
         let (out, inn) = (out_slot as usize, in_slot as usize);
         if side > 1 {
             return Err("Unknown team.".into());

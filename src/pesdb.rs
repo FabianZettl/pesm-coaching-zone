@@ -30,7 +30,61 @@ pub struct Database {
     pub teams: HashMap<u32, String>,
     /// player id -> list of (team id, shirt number)
     pub assignments: HashMap<u32, Vec<(u32, u32)>>,
+    /// team id -> kits (from the mod's `UniColor.bin`, next to the pesdb).
+    pub kits: HashMap<u32, Vec<Kit>>,
     pub folder: PathBuf,
+}
+
+/// One kit's two main colours.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Kit {
+    /// 0 = home, 1 = away, 2 = third, 0x10 = goalkeeper
+    pub kind: u16,
+    pub color1: [u8; 3],
+    pub color2: [u8; 3],
+}
+
+/// `UniColor.bin`: per team u32 id, u8 count, then `count` entries of
+/// u16 kit kind, RGB colour 1, RGB colour 2.
+pub fn parse_kits(data: &[u8]) -> HashMap<u32, Vec<Kit>> {
+    let mut m = HashMap::new();
+    let mut i = 0;
+    while i + 5 <= data.len() {
+        let id = u32_at(data, i);
+        let n = data[i + 4] as usize;
+        let end = i + 5 + n * 8;
+        if n == 0 || n > 32 || end > data.len() {
+            break;
+        }
+        let kits = (0..n)
+            .map(|k| {
+                let e = &data[i + 5 + k * 8..i + 13 + k * 8];
+                Kit {
+                    kind: u16::from_le_bytes([e[0], e[1]]),
+                    color1: [e[2], e[3], e[4]],
+                    color2: [e[5], e[6], e[7]],
+                }
+            })
+            .collect();
+        m.insert(id, kits);
+        i = end;
+    }
+    m
+}
+
+fn pale(c: [u8; 3]) -> bool {
+    let (mx, mn) = (*c.iter().max().unwrap(), *c.iter().min().unwrap());
+    mn > 0xa0 && mx - mn < 0x30
+}
+
+fn hex(c: [u8; 3]) -> String {
+    format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
+}
+
+fn dist(a: [u8; 3], b: [u8; 3]) -> u32 {
+    (0..3)
+        .map(|i| (a[i] as i32 - b[i] as i32).unsigned_abs())
+        .sum()
 }
 
 pub fn unpack(raw: &[u8]) -> Result<Vec<u8>> {
@@ -121,8 +175,38 @@ impl Database {
             assignments: read("PlayerAssignment.bin")
                 .map(|d| parse_assignments(&d))
                 .unwrap_or_default(),
+            kits: folder
+                .parent()
+                .and_then(Path::parent)
+                .map(|common| common.join("character0/model/character/uniform/team/UniColor.bin"))
+                .and_then(|p| std::fs::read(p).ok())
+                .and_then(|raw| unpack(&raw).ok())
+                .map(|d| parse_kits(&d))
+                .unwrap_or_default(),
             folder: folder.to_path_buf(),
         })
+    }
+
+    /// A colour for each side, from the teams' kits: the home kit's main colour
+    /// (its second colour when the first is white or grey), and the away team's
+    /// change kit when both would look alike.
+    pub fn team_colors(&self, teams: [Option<u32>; 2]) -> [Option<String>; 2] {
+        let pick = |t: Option<u32>, kind: u16| {
+            let k = self.kits.get(&t?)?.iter().find(|k| k.kind == kind)?;
+            Some(if pale(k.color1) && !pale(k.color2) {
+                k.color2
+            } else {
+                k.color1
+            })
+        };
+        let home = pick(teams[0], 0);
+        let mut away = pick(teams[1], 0);
+        if let (Some(h), Some(a)) = (home, away)
+            && (dist(h, a) < 120 || (pale(h) && pale(a)))
+        {
+            away = pick(teams[1], 1).or(pick(teams[1], 2)).or(away);
+        }
+        [home.map(hex), away.map(hex)]
     }
 
     /// The team most of these players belong to (players also appear in national teams).
@@ -252,5 +336,56 @@ mod tests {
     #[test]
     fn rejects_non_wesys() {
         assert!(unpack(b"hello world, not a container").is_err());
+    }
+
+    #[test]
+    fn kits_and_team_colors() {
+        let mut d = vec![];
+        let mut team = |id: u32, kits: &[(u16, [u8; 3], [u8; 3])]| {
+            d.extend(id.to_le_bytes());
+            d.push(kits.len() as u8);
+            for (k, a, b) in kits {
+                d.extend(k.to_le_bytes());
+                d.extend(a);
+                d.extend(b);
+            }
+        };
+        team(
+            126,
+            &[
+                (0, [0xef, 0xcf, 0x10], [0x28, 0x28, 0x28]),
+                (1, [0x28; 3], [0xef, 0xcf, 0x10]),
+            ],
+        );
+        team(
+            109,
+            &[(0, [0xd6; 3], [0xd6; 3]), (1, [0x21, 0x48, 0x51], [0; 3])],
+        );
+        team(
+            110,
+            &[
+                (0, [0xf0, 0xd0, 0x20], [0; 3]),
+                (1, [0x10, 0x20, 0xa0], [0xff; 3]),
+            ],
+        );
+        let kits = parse_kits(&d);
+        assert_eq!(kits.len(), 3);
+        let db = Database {
+            kits,
+            ..Default::default()
+        };
+        assert_eq!(
+            db.team_colors([Some(126), Some(109)]),
+            [Some("#efcf10".into()), Some("#d6d6d6".into())]
+        );
+        // Two yellow teams: the away side wears its change kit.
+        assert_eq!(
+            db.team_colors([Some(126), Some(110)])[1],
+            Some("#1020a0".into())
+        );
+        assert_eq!(
+            db.team_colors([None, Some(126)]),
+            [None, Some("#efcf10".into())]
+        );
     }
 }

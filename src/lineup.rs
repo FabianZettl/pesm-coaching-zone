@@ -14,7 +14,6 @@
 //! stoppage.
 
 use crate::process::Memory;
-use anyhow::{Result, bail};
 use serde::Serialize;
 
 pub const AWAY: u64 = 0x248;
@@ -189,95 +188,6 @@ pub fn read(mem: &dyn Memory, home: u64) -> Option<Lineups> {
     (queue_ok(&l.queue[0]) && queue_ok(&l.queue[1])).then_some(l)
 }
 
-/// Requests a substitution the way the in-game menu does. The game carries it out at the next stoppage.
-pub fn request_sub(
-    mem: &dyn Memory,
-    home: u64,
-    side: usize,
-    out_slot: u32,
-    in_slot: u32,
-    _minute: u32,
-) -> Result<()> {
-    if side > 1 {
-        bail!("unknown team");
-    }
-    let base = home + if side == 1 { AWAY } else { 0 };
-    let Some(xb) = mem.read(base + XI, 11 * 4) else {
-        bail!("could not read the line-up")
-    };
-    let Some(qb) = mem.read(home + QUEUE[side], QUEUE_LEN * 12) else {
-        bail!("could not read the substitution queue")
-    };
-    let Some(head) = mem.read(home + QUEUE[side] - 4, 4) else {
-        bail!("could not read the substitution queue")
-    };
-    let queue = parse_queue(&qb);
-    if !queue_ok(&queue) || !head_ok(&head) {
-        bail!("the line-up in memory looks different than expected; is this FL_2027.exe 1.00?");
-    }
-    if out_slot >= 40 || in_slot >= 40 {
-        bail!("player not found in the line-up");
-    }
-    let Some(list) = mem.read(base, 40) else {
-        bail!("could not read the line-up")
-    };
-    let xi: Vec<u32> = (0..11).map(|i| u32_at(&xb, i * 4)).collect();
-    // FL27 checks its own line-up list when it makes the change and drops the sub
-    // unless the player going off is in the eleven there and the one coming on is on the bench.
-    let (eleven, bench) = list.split_at(11);
-    if !eleven.contains(&(out_slot as u8))
-        || !bench.contains(&(in_slot as u8))
-        || eleven.contains(&(in_slot as u8))
-    {
-        bail!(
-            "FL27's own line-up doesn't match this change. Please use the pause menu for this one."
-        );
-    }
-    if !xi.contains(&out_slot) {
-        bail!("the player going off is not on the pitch");
-    }
-    if xi.contains(&in_slot) {
-        bail!("the player coming on is already on the pitch");
-    }
-    if queue
-        .iter()
-        .any(|e| e.status == STATUS_REQUESTED && (e.in_slot == in_slot || e.out_slot == out_slot))
-    {
-        bail!("one of these players is already part of a substitution");
-    }
-    if queue
-        .iter()
-        .any(|e| e.status == STATUS_DONE && e.out_slot == in_slot && !xi.contains(&in_slot))
-    {
-        bail!("that player was already substituted off");
-    }
-    let used = queue.iter().filter(|e| !e.free()).count();
-    if used >= head[3] as usize {
-        bail!("no substitutions left");
-    }
-    let Some(free) = queue.iter().position(QueueEntry::free) else {
-        bail!("no substitutions left")
-    };
-
-    // Only the queue entry, exactly like the pause menu. The game swaps its own
-    // line-up lists when it makes the change; touching them first makes it drop the sub.
-    let e = home + QUEUE[side] + free as u64 * 12;
-    let mut slots = in_slot.to_le_bytes().to_vec();
-    slots.extend(out_slot.to_le_bytes());
-    if !mem.write(e, &slots) || !mem.write(e + 8, &STATUS_REQUESTED.to_le_bytes()) {
-        bail!("writing to the game was not allowed");
-    }
-    // The first byte of the queue head names the player the engine takes off next
-    // (0xff = none). The pause menu hands its subs over another way, so for a team a
-    // person controls it stays 0xff and our entry would be dropped. Point it at our player.
-    // Seen working with slot 10 twice (Zirkzee for Šeško, Kim for Kane); not yet told
-    // apart from the formation place, which was also 10 both times.
-    if !mem.write(home + QUEUE[side] - 4, &[out_slot as u8]) {
-        bail!("writing to the game was not allowed");
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,11 +208,6 @@ mod tests {
                 start: self.base,
                 len: self.bytes.borrow().len() as u64,
             }]
-        }
-        fn write(&self, addr: u64, b: &[u8]) -> bool {
-            let o = (addr - self.base) as usize;
-            self.bytes.borrow_mut()[o..o + b.len()].copy_from_slice(b);
-            true
         }
     }
 
@@ -347,32 +252,5 @@ mod tests {
         assert_eq!(l.xi[0], (0..11).collect::<Vec<u32>>());
         assert_eq!(l.limit, [5, 5]);
         assert!(l.queue[1].iter().all(QueueEntry::free));
-    }
-
-    #[test]
-    fn request_sub_like_the_menu() {
-        let m = fake(0x300);
-        let home = 0x4000_0300;
-        request_sub(&m, home, 0, 10, 28, 25).unwrap();
-        assert_eq!(m.read(home + QUEUE[0] - 4, 1).unwrap(), vec![10]);
-        // The menu leaves the line-up lists alone; so do we.
-        let list = m.read(home, 40).unwrap();
-        assert_eq!(list[10], 10);
-        assert_eq!(list[28], 28);
-        let l = read(&m, home).unwrap();
-        assert_eq!(
-            l.queue[0][0],
-            QueueEntry {
-                in_slot: 28,
-                out_slot: 10,
-                status: STATUS_REQUESTED
-            }
-        );
-        // Same players again, or a player already on the pitch, is refused.
-        assert!(request_sub(&m, home, 0, 10, 29, 25).is_err());
-        assert!(request_sub(&m, home, 0, 3, 4, 25).is_err());
-        // Away side writes its own queue.
-        request_sub(&m, home, 1, 9, 22, 25).unwrap();
-        assert_eq!(read(&m, home).unwrap().queue[1][0].in_slot, 22);
     }
 }

@@ -15,7 +15,7 @@
   --grund:#f6f3ee;--flaeche:#fff;--erhoehung:#fbf9f6;--ueberlagerung:#efe9df;--linie:#e4ded4;
   --text:#1b1f27;--text2:#5d6676;--gedaempft:#6b7280;--nav:#fffdf9;--schatten:rgba(0,0,0,.07);
   --akzent:#38bdf8;--gut:#3ecf8e;--achtung:#f5b942;--problem:#ff4d6a;
-  --heim:#d4152f;--heim-tief:#590d17;--heim-weich:#f6e9eb;--gast:#3b82f6;--reiter-aktiv:var(--heim-weich);
+  --heim:#d4152f;--heim-tief:#590d17;--heim-weich:#f6e9eb;--gast:#3b82f6;--heim-text:#fff;--gast-text:#fff;--reiter-aktiv:var(--heim-weich);
   --rasen:#1E5A35;--rasen-streifen:#226440;
   --b-training:#3ecf8e;--b-finanzen:#f5b942;--b-presse:#38bdf8;--b-kabine:#a78bfa;--b-markt:#fb923c;--b-praesidium:#94a3b8;
   --t-tw:#a78bfa;--t-abw:#3b82f6;--t-mf:#14b8a6;--t-ang:#f43f5e;
@@ -46,7 +46,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--akzent);outline
 .tm{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0;text-align:center}
 .wappen{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-family:var(--titel);font-style:italic;font-weight:800;font-size:15px;position:relative}
 .wappen::after{content:"";position:absolute;inset:4px;border-radius:50%;border:2px solid rgba(255,255,255,.6)}
-.wappen.h{background:var(--heim);color:#fff}.wappen.a{background:#fff;color:#1d3f8f}.wappen.a::after{border-color:rgba(29,63,143,.55)}
+.wappen.h{background:var(--heim);color:var(--heim-text)}.wappen.a{background:var(--gast-wappen,#fff);color:var(--gast-wappen-text,#1d3f8f)}.wappen.a::after{border-color:rgba(29,63,143,.55)}
 .tm b{font-size:17px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tm small{font-size:11.5px;color:#e6eaf0;line-height:1.15}
 .stand{font-size:54px;line-height:.9;font-variant-numeric:tabular-nums;text-align:center}
@@ -62,7 +62,7 @@ main{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:10px max(10px,en
 .k-kopf h2{margin:0;font-size:19px;line-height:1}
 .k-kopf small{font-size:12.5px;font-weight:600;opacity:.8}
 .k-in{padding:12px;display:flex;flex-direction:column;gap:10px}
-.kf-presse{background:var(--b-presse)}.kf-kabine{background:var(--b-kabine)}.kf-training{background:var(--b-training)}.kf-markt{background:var(--b-markt)}.kf-finanzen{background:var(--b-finanzen)}.kf-praes{background:var(--b-praesidium)}.kf-heim{background:var(--heim);color:#fff}
+.kf-presse{background:var(--b-presse)}.kf-kabine{background:var(--b-kabine)}.kf-training{background:var(--b-training)}.kf-markt{background:var(--b-markt)}.kf-finanzen{background:var(--b-finanzen)}.kf-praes{background:var(--b-praesidium)}.kf-heim{background:var(--heim);color:var(--heim-text)}
 .leer{color:var(--text2);font-size:14.5px}
 
 nav{flex:none;border-top:1px solid var(--linie);background:var(--nav);padding:6px max(6px,env(safe-area-inset-right)) calc(env(safe-area-inset-bottom,0px) + 10px) max(6px,env(safe-area-inset-left))}
@@ -155,7 +155,7 @@ nav .dot{position:absolute;top:1px;right:calc(50% - 22px);min-width:16px;height:
 .tk-z.leise .t{font-weight:500;color:var(--text2);font-size:14.5px}.tk-z.leise .m{color:var(--text2);font-size:18px}
 .tk-z.heiss .m{color:var(--problem)}
 .gk{border-radius:14px;overflow:hidden;background:var(--flaeche);box-shadow:0 2px 10px var(--schatten)}
-.gk-kopf{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:10px 14px;color:#fff}
+.gk-kopf{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:10px 14px;color:#fff}.gk-kopf.s0{color:var(--heim-text)}.gk-kopf.s1{color:var(--gast-text)}
 .gk-kopf .m{font-family:var(--titel);font-style:italic;font-weight:800;font-size:24px}
 .gk-kopf h3{margin:0;text-align:center;font-family:var(--titel);font-style:italic;font-weight:800;font-size:18px;letter-spacing:.3px;text-transform:uppercase}
 .gk-kopf .sym{font-size:20px;width:26px;text-align:right}
@@ -269,8 +269,22 @@ function posmarke(p){if(!p)return "";var v=POSF[p]||"--t-mf";return '<span class
 function noteKl(r){return r==null?"n-leer":r>=8?"n-top":r>=7?"n-gut":r>=6?"n-achtung":"n-problem"}
 function note(r,klein){return '<span class="np '+(klein?"s ":"")+noteKl(r)+'">'+(r==null?"–":r.toFixed(1))+"</span>"}
 function kurz(n){n=(n||"").trim();return (n.replace(/[^A-Za-z]/g,"").slice(0,3)||"?").toUpperCase()}
+// Team colours from the mod's kits; text turns dark on light colours.
+function rgb(h){return [1,3,5].map(function(i){return parseInt(h.substr(i,2),16)})}
+function hexr(c){return "#"+c.map(function(v){v=Math.max(0,Math.min(255,Math.round(v)));return (v<16?"0":"")+v.toString(16)}).join("")}
+function hell(c){return (0.299*c[0]+0.587*c[1]+0.114*c[2])>165}
+function teamFarben(m){
+  var k=(m.colors||[null,null]).join("|");if(k===S.farbKey)return;S.farbKey=k;
+  var r=document.documentElement.style;
+  [["heim",0],["gast",1]].forEach(function(x){var h=m.colors&&m.colors[x[1]];
+    if(!h){["","-text","-tief","-weich","-wappen","-wappen-text"].forEach(function(suf){r.removeProperty("--"+x[0]+suf)});return}
+    var c=rgb(h);r.setProperty("--"+x[0],h);r.setProperty("--"+x[0]+"-text",hell(c)?"#14181f":"#fff");
+    if(x[1]===1){r.setProperty("--gast-wappen",h);r.setProperty("--gast-wappen-text",hell(c)?"#14181f":"#fff")}
+    if(x[1]===0){r.setProperty("--heim-tief",hexr(c.map(function(v){return v*0.35})));r.setProperty("--heim-weich",hexr(c.map(function(v){return 255-(255-v)*0.12})))}
+  });
+}
 function farbe(side){return side===0?"var(--heim)":"var(--gast)"}
-function trikot(side,nr,gk){var c=gk?"var(--b-kabine)":farbe(side);return '<svg viewBox="0 0 34 34" aria-hidden="true"><path d="M11 3 4 7l3 7 3-1.5V31h14V12.5l3 1.5 3-7-7-4c-1.2 2-3 3-5 3s-3.8-1-5-3z" fill="'+c+'" stroke="rgba(0,0,0,.35)" stroke-width="1"/><path d="M13 3.6 17 8l4-4.4" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="1.3"/></svg><span class="nr">'+(nr==null?"":nr)+"</span>"}
+function trikot(side,nr,gk){var c=gk?"var(--b-kabine)":farbe(side);return '<svg viewBox="0 0 34 34" aria-hidden="true"><path d="M11 3 4 7l3 7 3-1.5V31h14V12.5l3 1.5 3-7-7-4c-1.2 2-3 3-5 3s-3.8-1-5-3z" fill="'+c+'" stroke="rgba(0,0,0,.35)" stroke-width="1"/><path d="M13 3.6 17 8l4-4.4" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="1.3"/></svg><span class="nr"'+(gk?"":' style="color:var(--'+(side?"gast":"heim")+'-text)"')+'>'+(nr==null?"":nr)+"</span>"}
 
 var ICON={goal:"G",own_goal:"OG",yellow:"",second_yellow:"",red:"",sub:"⇄",penalty_missed:"P",chance:"!",shot_wide:"↗",corner:"C",free_kick:"FK",offside:"OS"};
 var VIB={goal:1,own_goal:1,yellow:1,second_yellow:1,red:1,penalty_missed:1};
@@ -291,6 +305,7 @@ function render(){
   var m=d&&d.match;
   $("verb").innerHTML='<i style="background:'+(S.offen?"var(--gut)":"var(--achtung)")+'"></i>'+(d&&d.demo?"Demo match":S.offen?"Connected to your PC":"Connecting");
   if(m){
+    teamFarben(m);
     $("n-h").textContent=m.home;$("n-a").textContent=m.away;$("w-h").textContent=kurz(m.home);$("w-a").textContent=kurz(m.away);
     $("stand").textContent=m.score[0]+":"+m.score[1];
     $("minute").textContent=(m.minute_tracked?"":"~")+m.minute+"'  ·  "+m.period_label;
@@ -359,7 +374,7 @@ function tabXI(m){
   if(m.subs&&m.subs.available&&S.mein==null)h+='<section class="karte"><div class="k-kopf kf-presse"><h2 class="titel">Which team is yours?</h2><small>for substitutions</small></div><div class="k-in"><div class="knopfreihe"><button class="knopf zweit" data-mein="0">'+esc(m.home)+'</button><button class="knopf zweit" data-mein="1">'+esc(m.away)+"</button></div></div></section>";
   h+=wartend(m,side);
   if(S.wechsel&&side===meineSeite(m))h+=wechselKarte(m);else if(gew)h+=detail(gew,m);
-  h+='<section class="karte"><div class="k-kopf kf-heim" style="background:'+farbe(side)+'"><h2 class="titel">'+esc(team)+'</h2><small>tap a shirt for details</small></div><div class="k-in"><div class="feld"><svg class="linien" viewBox="0 0 68 92" preserveAspectRatio="none" fill="none" stroke="rgba(255,255,255,.45)" stroke-width=".5"><rect x="2" y="2" width="64" height="88"/><line x1="2" y1="46" x2="66" y2="46"/><circle cx="34" cy="46" r="8"/><rect x="16" y="2" width="36" height="14"/><rect x="16" y="76" width="36" height="14"/><rect x="26" y="2" width="16" height="5"/><rect x="26" y="85" width="16" height="5"/></svg>';
+  h+='<section class="karte"><div class="k-kopf kf-heim" style="background:'+farbe(side)+';color:'+(side?"var(--gast-text)":"var(--heim-text)")+'"><h2 class="titel">'+esc(team)+'</h2><small>tap a shirt for details</small></div><div class="k-in"><div class="feld"><svg class="linien" viewBox="0 0 68 92" preserveAspectRatio="none" fill="none" stroke="rgba(255,255,255,.45)" stroke-width=".5"><rect x="2" y="2" width="64" height="88"/><line x1="2" y1="46" x2="66" y2="46"/><circle cx="34" cy="46" r="8"/><rect x="16" y="2" width="36" height="14"/><rect x="16" y="76" width="36" height="14"/><rect x="26" y="2" width="16" height="5"/><rect x="26" y="85" width="16" height="5"/></svg>';
   aufstellung(auf).forEach(function(o){var p=o.p;
     h+='<button class="sp'+(S.gew===p.slot?" gew":"")+'" data-slot="'+p.slot+'" style="left:'+o.x+"%;top:"+o.y+'%" aria-label="'+esc(p.name)+", rating "+(p.rating==null?"none":p.rating.toFixed(1))+'"><span class="trikot">'+trikot(side,p.number,p.position==="GK")+'<span class="npw">'+note(p.rating,true)+'</span><span class="mk">'+(p.yellow?'<i class="g"></i>':"")+"</span></span><span class=\"name\">"+esc(p.name)+"</span></button>"});
   h+="</div></div></section>";
@@ -372,7 +387,7 @@ function tabXI(m){
 function detail(p,m){
   var acc=p.passes?Math.round(p.passes_ok/p.passes*100)+"%":"–";
   var kv=p.position==="GK"?[["Saves",p.saves],["Passes",p.passes],["Pass acc.",acc]]:[["Goals",p.goals],["Assists",p.assists],["Shots",p.shots+" ("+p.on_target+")"],["Passes",p.passes],["Pass acc.",acc],["Duels won",p.duels_won],["Intercept.",p.interceptions],["Touches",p.touches],["Fouls",p.fouls]];
-  return '<section class="karte" style="border:2px solid var(--akzent)"><div class="k-in detail"><div class="oben"><span class="trikot" style="position:relative;width:34px;height:34px;display:inline-block">'+trikot(p.side,p.number,p.position==="GK")+'</span><div style="flex:1;min-width:0"><h3 class="titel">'+esc(p.name)+"</h3><div style=\"font-size:13.5px;color:var(--text2)\">"+posmarke(p.position)+" "+esc(p.full_name&&p.full_name!==p.name?p.full_name:"")+(p.came_on?" · came on":"")+(p.went_off?" · subbed off":"")+(p.sent_off?" · sent off":"")+"</div></div>"+note(p.rating)+'</div><div class="kv">'+kv.map(function(x){return "<div><b>"+x[1]+"</b><span>"+x[0]+"</span></div>"}).join("")+'</div>'+(kannWechseln(p,m)?'<div class="knopfreihe"><button class="knopf" data-wechsel="'+p.slot+'">Substitute</button><button class="knopf zweit" data-zu="1">Close</button></div>':'<button class="pille" data-zu="1" style="align-self:flex-start">Close</button>')+'</div></section>'}
+  return '<section class="karte" style="border:2px solid var(--akzent)"><div class="k-in detail"><div class="oben"><span class="trikot" style="position:relative;width:34px;height:34px;display:inline-block">'+trikot(p.side,p.number,p.position==="GK")+'</span><div style="flex:1;min-width:0"><h3 class="titel">'+esc(p.name)+"</h3><div style=\"font-size:13.5px;color:var(--text2)\">"+posmarke(p.position)+" "+esc(p.full_name&&p.full_name!==p.name?p.full_name:"")+(p.came_on?" · came on":"")+(p.went_off?" · subbed off":"")+(p.sent_off?" · sent off":"")+"</div></div>"+note(p.rating)+'</div><div class="kv">'+kv.map(function(x){return "<div><b>"+x[1]+"</b><span>"+x[0]+"</span></div>"}).join("")+'</div>'+(kannWechseln(p,m)?'<div class="knopfreihe"><button class="knopf" data-wechsel="'+p.slot+'">Suggest a sub</button><button class="knopf zweit" data-zu="1">Close</button></div>':'<button class="pille" data-zu="1" style="align-self:flex-start">Close</button>')+'</div></section>'}
 
 // ---- Substitutions -------------------------------------------------------------
 var GRUPPE={GK:"GK",CB:"DEF",LB:"DEF",RB:"DEF",DMF:"MID",CMF:"MID",LMF:"MID",RMF:"MID",AMF:"MID",LWF:"ATT",RWF:"ATT",SS:"ATT",CF:"ATT"};
@@ -399,26 +414,19 @@ function vorschlaege(raus,m){
 function wechselKarte(m){
   var raus=spieler(m,meineSeite(m),S.wechsel.raus);if(!raus){S.wechsel=null;return ""}
   var lim=(m.subs.limit&&m.subs.limit[raus.side])||5,left=lim-subsUsed(m,raus.side);
-  var h='<section class="karte" style="border:2px solid var(--b-presse)"><div class="k-kopf kf-presse"><h2 class="titel">Substitution</h2><small>'+Math.max(0,left)+" of "+lim+' left</small></div><div class="k-in">';
+  var h='<section class="karte" style="border:2px solid var(--b-presse)"><div class="k-kopf kf-presse"><h2 class="titel">Sub ideas</h2><small>'+Math.max(0,left)+" of "+lim+' left</small></div><div class="k-in">';
   h+='<div class="detail"><div class="oben"><span class="trikot">'+trikot(raus.side,raus.number,raus.position==="GK")+'</span><div style="flex:1;min-width:0"><h3 class="titel">'+esc(raus.name)+' off</h3><div style="font-size:13.5px;color:var(--text2)">'+posmarke(raus.role||raus.position)+"</div></div>"+note(raus.rating)+"</div></div>";
   if(S.wechsel.rein!=null){var q=spieler(m,raus.side,S.wechsel.rein);
-    h+='<div class="hinweis-z" style="font-size:16px">Bring on <b>'+esc(q.name)+"</b> for <b>"+esc(raus.name)+'</b>?<br><span style="font-size:13.5px;color:var(--text2)">FL27 makes the change at the next stoppage, like a sub from the menu.</span></div><div class="knopfreihe"><button class="knopf" data-ok="1">Confirm</button><button class="knopf zweit" data-abbruch="1">Cancel</button></div>';
+    h+='<div class="hinweis-z" style="font-size:16px">Bring on <b>'+esc(q.name)+"</b> for <b>"+esc(raus.name)+'</b>.<br><span style="font-size:13.5px;color:var(--text2)">Make the change in FL27: pause, open Substitutions and swap the two. The phone shows it as soon as it is requested.</span></div><div class="knopfreihe"><button class="knopf" data-abbruch="1">Got it</button><button class="knopf zweit" data-zurueck="1">Other player</button></div>';
     return h+"</div></section>"}
   if(left<=0)return h+'<div class="leer">No substitutions left.</div><button class="knopf zweit" data-abbruch="1">Close</button></div></section>';
   var v=vorschlaege(raus,m),zeige=S.wechsel.alle?v:v.slice(0,3);
   if(!v.length)h+='<div class="leer">No bench players available.</div>';
-  zeige.forEach(function(x){var q=x.q;h+='<button class="vorschlag" data-rein="'+q.slot+'"><span class="trikot">'+trikot(q.side,q.number,q.position==="GK")+'</span><span>'+esc(q.name)+" "+posmarke(q.position)+"<small>"+esc(x.w)+'</small></span><span class="los">On ›</span></button>'});
+  zeige.forEach(function(x){var q=x.q;h+='<button class="vorschlag" data-rein="'+q.slot+'"><span class="trikot">'+trikot(q.side,q.number,q.position==="GK")+'</span><span>'+esc(q.name)+" "+posmarke(q.position)+"<small>"+esc(x.w)+'</small></span><span class="los">›</span></button>'});
   if(v.length>3)h+='<button class="vorschlag alle" data-alle="1"><span>'+(S.wechsel.alle?"Show only the top 3":"See whole bench ("+v.length+")")+'</span><span class="los">'+(S.wechsel.alle?"‹":"›")+"</span></button>";
   return h+'<button class="knopf zweit" data-abbruch="1">Cancel</button></div></section>';
 }
 function toast(t){var e=document.createElement("div");e.className="toast";e.setAttribute("role","status");e.textContent=t;document.body.appendChild(e);setTimeout(function(){e.remove()},3500)}
-function sendeWechsel(){
-  var m=S.data.match,side=meineSeite(m),w=S.wechsel;
-  fetch("/sub",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({k:token,side:side,out_slot:w.raus,in_slot:w.rein})})
-   .then(function(r){return r.json().catch(function(){return {ok:false,message:"No answer from your PC."}})})
-   .then(function(j){toast(j.message||(j.ok?"Substitution requested.":"Substitution failed."));if(j.ok){S.wechsel=null;S.gew=null}render()})
-   .catch(function(){toast("Could not reach your PC.")});
-}
 
 function tabStats(m){
   var h='<section class="karte"><div class="k-kopf kf-training"><h2 class="titel">Team</h2><small>'+esc(m.home)+" · "+esc(m.away)+'</small></div><div class="k-in">'+stz("xG (simple)",m.xg[0],m.xg[1],true)+m.team_stats.map(function(r){return stz(r.label,r.home,r.away)}).join("")+'<div class="leer" style="font-size:13px">Possession is not stored by FL27, so it is not shown. The bar at the top shows ball touches instead.</div></div></section>';
@@ -427,7 +435,7 @@ function tabStats(m){
     return "<span>"+esc(f.label)+'</span><div class="bars"><i style="width:'+f.touches[0]/max*100+'%;background:var(--heim)"></i><i style="width:'+f.touches[1]/max*100+'%;background:var(--gast)"></i></div>'+(f.shots[0]+f.shots[1]?'<span></span><span style="font-size:12px;color:var(--text2);margin-top:-4px">shots '+f.shots[0]+" : "+f.shots[1]+"</span>":"")}).join("")+"</div></div></section>";
   [0,1].forEach(function(side){
     var ps=m.players.filter(function(p){return p.side===side&&p.rating!=null}).sort(function(a,b){return b.rating-a.rating});
-    h+='<section class="karte"><div class="k-kopf kf-heim" style="background:'+farbe(side)+'"><h2 class="titel">'+esc(side===0?m.home:m.away)+'</h2><small>players</small></div><div class="k-in" style="overflow-x:auto"><table class="tab"><thead><tr><th>Player</th><th>G</th><th>A</th><th>Sh</th><th>Pass</th><th>Rating</th></tr></thead><tbody>'+
+    h+='<section class="karte"><div class="k-kopf kf-heim" style="background:'+farbe(side)+';color:'+(side?"var(--gast-text)":"var(--heim-text)")+'"><h2 class="titel">'+esc(side===0?m.home:m.away)+'</h2><small>players</small></div><div class="k-in" style="overflow-x:auto"><table class="tab"><thead><tr><th>Player</th><th>G</th><th>A</th><th>Sh</th><th>Pass</th><th>Rating</th></tr></thead><tbody>'+
       ps.map(function(p){return '<tr><td>'+esc(p.name)+(p.went_off?' <span style="color:var(--gedaempft)">↓</span>':p.came_on?' <span style="color:var(--gut)">↑</span>':"")+"</td><td>"+p.goals+"</td><td>"+p.assists+"</td><td>"+p.shots+"</td><td>"+p.passes_ok+"/"+p.passes+"</td><td>"+note(p.rating,true)+"</td></tr>"}).join("")+"</tbody></table></div></section>"});
   return h;
 }
@@ -450,7 +458,7 @@ function spKarte(p,side,art,rechts){
 function wZelle(p,side,rein){
   return '<div class="wz '+(rein?"rein":"raus")+'"><span class="pf">'+(rein?"↑":"↓")+'</span><span class="trikot">'+trikot(side,p?p.number:null,p&&p.position==="GK")+'</span><span><small>'+esc(vorname(p))+"</small><b>"+esc(p?p.name:"?")+"</b></span></div>"}
 function kopf(e,m,titel,sym,farbeK){
-  return '<div class="gk-kopf" style="background:'+(farbeK||farbe(e.side))+'"><span class="m">'+e.minute+"'</span><h3>"+esc(titel)+'</h3><span class="sym">'+sym+"</span></div>"}
+  return '<div class="gk-kopf'+(farbeK?"":" s"+e.side)+'" style="background:'+(farbeK||farbe(e.side))+'"><span class="m">'+e.minute+"'</span><h3>"+esc(titel)+'</h3><span class="sym">'+sym+"</span></div>"}
 function tickerBloecke(m,alle){
   // Chronological pass: running score, and subs of one side in the same minute go together.
   var st=[0,0],out=[];
@@ -503,7 +511,7 @@ function binde(){
   document.querySelectorAll("[data-wechsel]").forEach(function(b){b.onclick=function(){S.wechsel={raus:+b.dataset.wechsel,alle:false,rein:null};render()}});
   document.querySelectorAll("[data-alle]").forEach(function(b){b.onclick=function(){S.wechsel.alle=!S.wechsel.alle;render()}});
   document.querySelectorAll("[data-rein]").forEach(function(b){b.onclick=function(){S.wechsel.rein=+b.dataset.rein;render()}});
-  document.querySelectorAll("[data-ok]").forEach(function(b){b.onclick=sendeWechsel});
+  document.querySelectorAll("[data-zurueck]").forEach(function(b){b.onclick=function(){S.wechsel.rein=null;render()}});
   document.querySelectorAll("[data-abbruch]").forEach(function(b){b.onclick=function(){S.wechsel=null;render()}});
 }
 document.querySelectorAll("nav button").forEach(function(b){b.onclick=function(){S.tab=b.dataset.t;store.set("cz-tab",S.tab);render();document.querySelector("main").scrollTop=0}});
