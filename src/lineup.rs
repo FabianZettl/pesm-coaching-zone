@@ -267,12 +267,12 @@ pub fn request_sub(
     if !mem.write(e, &slots) || !mem.write(e + 8, &STATUS_REQUESTED.to_le_bytes()) {
         bail!("writing to the game was not allowed");
     }
-    // The first byte of the queue head is 0xff for a team a person controls. Then the
-    // engine leaves the queue alone (only the pause menu works through it) and drops our
-    // entry at the next stoppage. Computer teams have a slot number there, and the engine
-    // makes their subs itself. Setting it makes the engine take our sub too.
-    // 0x0a worked in two matches; other values are left as they are.
-    if head[0] == 0xff && !mem.write(home + QUEUE[side] - 4, &[0x0a]) {
+    // The first byte of the queue head names the player the engine takes off next
+    // (0xff = none). The pause menu hands its subs over another way, so for a team a
+    // person controls it stays 0xff and our entry would be dropped. Point it at our player.
+    // Seen working with slot 10 twice (Zirkzee for Šeško, Kim for Kane); not yet told
+    // apart from the formation place, which was also 10 both times.
+    if !mem.write(home + QUEUE[side] - 4, &[out_slot as u8]) {
         bail!("writing to the game was not allowed");
     }
     Ok(())
@@ -353,7 +353,6 @@ mod tests {
     fn request_sub_like_the_menu() {
         let m = fake(0x300);
         let home = 0x4000_0300;
-        m.write(home + QUEUE[0] - 4, &[0xff]);
         request_sub(&m, home, 0, 10, 28, 25).unwrap();
         assert_eq!(m.read(home + QUEUE[0] - 4, 1).unwrap(), vec![10]);
         // The menu leaves the line-up lists alone; so do we.
