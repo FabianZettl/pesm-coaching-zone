@@ -416,14 +416,19 @@ impl Tracker {
                 if st.on && !on {
                     st.went_off = true;
                 }
+                if on {
+                    st.went_off = false;
+                }
                 if on && slot >= STARTERS {
                     st.came_on = true;
                 }
                 st.on = on;
             }
+            // FL27 also marks a sub as done when it drops it (e.g. an invalid request).
+            // Only a player who really left the pitch counts.
             for e in l.queue[side].iter().filter(|e| e.status == STATUS_DONE) {
                 let (i, o) = (e.in_slot as usize, e.out_slot as usize);
-                if i >= SLOTS || o >= SLOTS {
+                if i >= SLOTS || o >= SLOTS || l.xi[side].contains(&e.out_slot) {
                     continue;
                 }
                 self.players[side][o].went_off = true;

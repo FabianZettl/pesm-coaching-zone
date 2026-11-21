@@ -183,7 +183,7 @@ pub fn request_sub(
         bail!("unknown team");
     }
     let base = home + if side == 1 { AWAY } else { 0 };
-    let Some(list) = mem.read(base, 40) else {
+    let Some(xb) = mem.read(base + XI, 11 * 4) else {
         bail!("could not read the line-up")
     };
     let Some(qb) = mem.read(home + QUEUE[side], QUEUE_LEN * 12) else {
@@ -196,26 +196,26 @@ pub fn request_sub(
     if !queue_ok(&queue) || !head_ok(&head) {
         bail!("the line-up in memory looks different than expected; is this FL_2027.exe 1.00?");
     }
-    let pos_out = list.iter().position(|&x| x as u32 == out_slot);
-    let pos_in = list.iter().position(|&x| x as u32 == in_slot);
-    let (Some(po), Some(pi)) = (pos_out, pos_in) else {
-        bail!("player not found in the line-up")
-    };
-    if po >= 11 {
+    if out_slot >= 40 || in_slot >= 40 {
+        bail!("player not found in the line-up");
+    }
+    let xi: Vec<u32> = (0..11).map(|i| u32_at(&xb, i * 4)).collect();
+    if !xi.contains(&out_slot) {
         bail!("the player going off is not on the pitch");
     }
-    if pi < 11 {
+    if xi.contains(&in_slot) {
         bail!("the player coming on is already on the pitch");
     }
-    if queue.iter().any(|e| {
-        !e.free()
-            && (e.in_slot == in_slot
-                || e.in_slot == out_slot && e.status == STATUS_REQUESTED
-                || e.out_slot == out_slot)
-    }) {
+    if queue
+        .iter()
+        .any(|e| e.status == STATUS_REQUESTED && (e.in_slot == in_slot || e.out_slot == out_slot))
+    {
         bail!("one of these players is already part of a substitution");
     }
-    if queue.iter().any(|e| !e.free() && e.out_slot == in_slot) {
+    if queue
+        .iter()
+        .any(|e| e.status == STATUS_DONE && e.out_slot == in_slot && !xi.contains(&in_slot))
+    {
         bail!("that player was already substituted off");
     }
     let used = queue.iter().filter(|e| !e.free()).count();
@@ -226,19 +226,12 @@ pub fn request_sub(
         bail!("no substitutions left")
     };
 
-    // 1) swap in the u8 list, 2) add the queue entry (status last, so the game sees a complete entry).
-    if !mem.write(base + po as u64, &[in_slot as u8])
-        || !mem.write(base + pi as u64, &[out_slot as u8])
-    {
-        bail!("writing to the game was not allowed");
-    }
+    // Only the queue entry, exactly like the pause menu. The game swaps its own
+    // line-up lists when it makes the change; touching them first makes it drop the sub.
     let e = home + QUEUE[side] + free as u64 * 12;
     let mut slots = in_slot.to_le_bytes().to_vec();
     slots.extend(out_slot.to_le_bytes());
     if !mem.write(e, &slots) || !mem.write(e + 8, &STATUS_REQUESTED.to_le_bytes()) {
-        // Undo the swap so the menu stays consistent.
-        mem.write(base + po as u64, &[out_slot as u8]);
-        mem.write(base + pi as u64, &[in_slot as u8]);
         bail!("writing to the game was not allowed");
     }
     Ok(())
@@ -320,9 +313,10 @@ mod tests {
         let m = fake(0x100);
         let home = 0x4000_0100;
         request_sub(&m, home, 0, 10, 28).unwrap();
+        // The menu leaves the line-up lists alone; so do we.
         let list = m.read(home, 40).unwrap();
-        assert_eq!(list[10], 28);
-        assert_eq!(list[28], 10);
+        assert_eq!(list[10], 10);
+        assert_eq!(list[28], 28);
         let l = read(&m, home).unwrap();
         assert_eq!(
             l.queue[0][0],
