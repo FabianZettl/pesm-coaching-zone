@@ -319,7 +319,11 @@ fn reader_loop(
         while Instant::now() < until {
             if let Ok(cmd) = subs.try_recv() {
                 let res = match (teams, tracker.can_sub) {
-                    (Some(t), true) => lineup::request_sub(g, t, cmd.side, cmd.out_slot, cmd.in_slot).map_err(|e| e.to_string()),
+                    (Some(t), true) => {
+                        let minute = tracker.view(None).map_or(0, |v| v.minute);
+                        lineup::request_sub(g, t, cmd.side, cmd.out_slot, cmd.in_slot, minute)
+                            .map_err(|e| e.to_string())
+                    }
                     _ if !allow_subs => Err("Substitutions are turned off on the PC (--no-subs).".into()),
                     _ if !g.can_write() => Err("No permission to change the game. See the README (setcap on Linux, same user on Windows).".into()),
                     _ => Err("The line-up was not found in this match yet.".into()),
