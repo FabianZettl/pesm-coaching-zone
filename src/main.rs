@@ -280,6 +280,10 @@ fn reader_loop(
                 {
                     last_team_scan = Some(Instant::now());
                     let found = lineup::find(g);
+                    if found.len() > 1 {
+                        let list: Vec<String> = found.iter().map(|a| format!("{a:#x}")).collect();
+                        println!("Line-up candidates: {}", list.join(", "));
+                    }
                     teams = found.first().copied();
                     l = teams.and_then(|t| lineup::read(g, t));
                     match teams {
