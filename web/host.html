@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PESM Coaching Zone</title>
+<style>
+@font-face{font-family:"Barlow Condensed";font-style:italic;font-weight:800;src:url(/fonts/barlow-condensed-latin-800-italic.woff2) format("woff2")}
+@font-face{font-family:"Barlow Semi Condensed";font-weight:500;src:url(/fonts/barlow-semi-condensed-latin-500-normal.woff2) format("woff2")}
+@font-face{font-family:"Barlow Semi Condensed";font-weight:600;src:url(/fonts/barlow-semi-condensed-latin-600-normal.woff2) format("woff2")}
+:root{--grund:#f6f3ee;--flaeche:#fff;--erhoehung:#fbf9f6;--linie:#e4ded4;--text:#1b1f27;--text2:#5d6676;--gedaempft:#6b7280;--schatten:rgba(0,0,0,.07);
+  --akzent:#38bdf8;--gut:#3ecf8e;--achtung:#f5b942;--problem:#ff4d6a;--heim:#d4152f;--heim-tief:#590d17;
+  --titel:"Barlow Condensed","Arial Narrow",sans-serif;--body:"Barlow Semi Condensed","Arial Narrow",system-ui,sans-serif}
+@media (prefers-color-scheme:dark){:root{--grund:#0f1218;--flaeche:#171c26;--erhoehung:#1e2430;--linie:#2a3242;--text:#eef2f8;--text2:#9aa6b8;--gedaempft:#7f8a9c;--schatten:rgba(0,0,0,.35);color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--grund);color:var(--text);font-family:var(--body);font-weight:500;font-size:16px;line-height:1.35;padding:24px 16px 40px}
+.w{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.buehne{position:relative;border-radius:15px;overflow:hidden;background:var(--heim-tief);color:#fff;padding:18px 20px 22px}
+.buehne::before{content:"";position:absolute;inset:0 0 0 45%;background:linear-gradient(90deg,transparent,rgba(212,21,47,.55))}
+.buehne::after{content:"";position:absolute;left:0;right:0;bottom:0;height:4px;background:var(--heim)}
+.buehne>*{position:relative}
+.ueberzeile{font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.75)}
+h1{margin:4px 0 6px;font-family:var(--titel);font-style:italic;font-weight:800;font-size:46px;text-transform:uppercase;line-height:.95}
+.buehne p{margin:0;color:#e6eaf0;font-size:18px;max-width:46ch}
+.karte{background:var(--flaeche);border:1px solid var(--linie);border-radius:15px;box-shadow:0 4px 0 var(--schatten);overflow:hidden}
+.k-kopf{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;color:#1b1f27}
+.k-kopf h2{margin:0;font-family:var(--titel);font-style:italic;font-weight:800;font-size:19px;text-transform:uppercase}
+.k-kopf small{font-size:12.5px;font-weight:600;opacity:.8}
+.k-in{padding:14px;display:flex;flex-direction:column;gap:10px}
+.koppeln{display:grid;grid-template-columns:auto 1fr;gap:20px;align-items:center}
+@media (max-width:560px){.koppeln{grid-template-columns:1fr;justify-items:center;text-align:center}}
+.qr{width:200px;height:200px;background:#fff;border-radius:10px;padding:6px;border:1px solid var(--linie)}
+.qr img{width:100%;height:100%;display:block}
+.code{font-family:var(--titel);font-style:italic;font-weight:800;font-size:44px;letter-spacing:.25em}
+.url{font-weight:600;word-break:break-all}
+.status{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:4px 12px;font-weight:600;font-size:14.5px;border:1px solid var(--linie);background:var(--erhoehung);width:max-content;max-width:100%}
+.status i{width:9px;height:9px;border-radius:50%;flex:none}
+ol{margin:0;padding-left:20px;color:var(--text2);display:flex;flex-direction:column;gap:4px}
+.fuss{font-size:13.5px;color:var(--gedaempft)}
+pre{white-space:pre-wrap;margin:0;font-size:14px;background:var(--erhoehung);border:1px solid var(--linie);border-radius:10px;padding:8px 10px}
+</style>
+</head>
+<body>
+<div class="w">
+  <section class="buehne">
+    <div class="ueberzeile">PESM Coaching Zone</div>
+    <h1>Your phone is the dugout</h1>
+    <p>FL27 runs on this PC. Your phone shows the match live: score, ratings, stats and ticker.</p>
+  </section>
+  <section class="karte">
+    <div class="k-kopf" style="background:var(--akzent)"><h2>Connect phone</h2><small>same Wi-Fi as this PC</small></div>
+    <div class="k-in">
+      <div class="koppeln">
+        <div class="qr"><img src="/qr.svg" alt="QR code to open the phone page"></div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div>Scan with your phone camera. Or open <span class="url" id="url"></span> and enter:</div>
+          <div class="code" id="code">····</div>
+          <div class="status" id="phones"><i style="background:var(--gedaempft)"></i>No phone connected</div>
+        </div>
+      </div>
+      <div class="fuss">Only devices in your home network can connect. Nothing goes to the internet.</div>
+    </div>
+  </section>
+  <section class="karte">
+    <div class="k-kopf" style="background:#3ecf8e"><h2>Game</h2><small id="art"></small></div>
+    <div class="k-in">
+      <div class="status" id="spiel"><i style="background:var(--gedaempft)"></i>Starting…</div>
+      <pre id="msg" hidden></pre>
+      <div id="names" class="fuss"></div>
+    </div>
+  </section>
+  <ol>
+    <li>Start FL27 and a match, as usual.</li>
+    <li>Scan the QR code. The page opens in your phone's browser, no app needed.</li>
+    <li>Your phone stays paired. Next time just open the same page again.</li>
+  </ol>
+</div>
+<script>
+function $(i){return document.getElementById(i)}
+function tick(){fetch("/host/info").then(function(r){return r.json()}).then(function(d){
+  $("url").textContent=d.url;$("code").textContent=d.code;
+  $("phones").innerHTML='<i style="background:'+(d.phones?"var(--gut)":"var(--gedaempft)")+'"></i>'+(d.phones?d.phones+(d.phones>1?" phones":" phone")+" connected":"No phone connected");
+  var t={live:["var(--gut)","Match live"],waiting_game:["var(--gedaempft)","Waiting for FL27 to start"],waiting_match:["var(--achtung)","FL27 running, waiting for a match"],error:["var(--problem)","Can't read the game"]}[d.status]||["var(--gedaempft)","Starting…"];
+  $("spiel").innerHTML='<i style="background:'+t[0]+'"></i>'+t[1]+(d.score&&d.status==="live"?" · "+d.score.replace(/&/g,"&amp;").replace(/</g,"&lt;"):"");
+  $("msg").hidden=d.status!=="error";$("msg").textContent=d.message||"";
+  $("art").textContent=d.demo?"demo match":"";
+  $("names").textContent=d.demo?"Demo with made-up players.":d.names?"Player names loaded.":"No player names. Restart with --game \"<your FL27 folder>\" to show names.";
+}).catch(function(){$("spiel").innerHTML='<i style="background:var(--problem)"></i>PESM Coaching Zone was closed'})}
+tick();setInterval(tick,2000);
+</script>
+</body>
+</html>
