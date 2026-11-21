@@ -146,6 +146,40 @@ nav .dot{position:absolute;top:1px;right:calc(50% - 22px);min-width:16px;height:
 .thema{background:none;border:0;color:rgba(255,255,255,.78);padding:0 2px;display:inline-flex}
 .thema svg{width:15px;height:15px}
 @media (prefers-reduced-motion:reduce){.tafel.blitz{animation:none}.druck i{transition:none}}
+
+/* Ticker, newspaper style: big cards for goals, cards and subs, text lines for the rest. */
+.tk{display:flex;flex-direction:column;gap:12px}
+.tk-z{display:grid;grid-template-columns:44px 1fr;gap:6px;padding:2px 2px}
+.tk-z .m{font-family:var(--titel);font-style:italic;font-weight:800;font-size:22px;line-height:1.1}
+.tk-z .t{font-size:15.5px;font-weight:600;line-height:1.35}
+.tk-z.leise .t{font-weight:500;color:var(--text2);font-size:14.5px}.tk-z.leise .m{color:var(--text2);font-size:18px}
+.tk-z.heiss .m{color:var(--problem)}
+.gk{border-radius:14px;overflow:hidden;background:var(--flaeche);box-shadow:0 2px 10px var(--schatten)}
+.gk-kopf{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:10px 14px;color:#fff}
+.gk-kopf .m{font-family:var(--titel);font-style:italic;font-weight:800;font-size:24px}
+.gk-kopf h3{margin:0;text-align:center;font-family:var(--titel);font-style:italic;font-weight:800;font-size:18px;letter-spacing:.3px;text-transform:uppercase}
+.gk-kopf .sym{font-size:20px;width:26px;text-align:right}
+.gk-in{padding:12px 14px 14px}
+.gk-sp{display:grid;grid-template-columns:54px 1fr auto;align-items:center;gap:12px;background:var(--erhoehung);border:1px solid var(--linie);border-radius:10px;padding:8px 10px}
+.gk-sp .trikot{position:relative;width:50px;height:50px;display:block}.gk-sp .trikot svg,.wz .trikot svg{width:100%;height:100%;display:block}.gk-sp .nr{font-size:18px;inset:12px 0 0}
+.gk-sp .vor{font-size:13px;color:var(--text2);display:block}
+.gk-sp .nam{font-family:var(--titel);font-style:italic;font-weight:800;font-size:22px;line-height:1.05;text-transform:uppercase}
+.gk-sp .art{font-size:13px;color:var(--text2);display:block;margin-top:3px}
+.stand{font-family:var(--titel);font-weight:800;font-size:24px;border:2px solid currentColor;border-radius:8px;padding:2px 10px;white-space:nowrap}
+.stand i{font-style:normal;opacity:.45}
+.gk-txt{margin:10px 2px 0;font-size:15px;font-weight:600;line-height:1.4}
+.gk.tor .gk-in{background:linear-gradient(180deg,var(--erhoehung),var(--flaeche))}
+.wb{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.wb:last-of-type{margin-bottom:0}
+.wz{display:grid;grid-template-columns:38px 1fr;align-items:center;gap:8px;border:1px solid var(--linie);border-radius:10px;padding:6px 8px;background:var(--erhoehung);position:relative}
+.wz.raus{grid-template-columns:1fr 38px;text-align:right}.wz.raus .trikot{order:2}
+.wz .trikot{position:relative;width:36px;height:36px;display:block}
+.wz b{font-family:var(--titel);font-style:italic;font-weight:800;font-size:17px;text-transform:uppercase;line-height:1.05;display:block}
+.wz small{font-size:12px;color:var(--text2)}
+.wz .pf{position:absolute;top:-9px;font-weight:800;font-size:14px}
+.wz.rein .pf{right:8px;color:var(--gut)}.wz.raus .pf{left:8px;color:var(--problem)}
+.kk{width:16px;height:22px;border-radius:3px;display:inline-block;box-shadow:0 1px 2px rgba(0,0,0,.4)}
+.kk.g{background:#f5c518}.kk.r{background:#e3262f}.kk.gr{background:linear-gradient(135deg,#f5c518 50%,#e3262f 50%)}
 </style>
 </head>
 <body>
@@ -397,11 +431,67 @@ function tabStats(m){
       ps.map(function(p){return '<tr><td>'+esc(p.name)+(p.went_off?' <span style="color:var(--gedaempft)">↓</span>':p.came_on?' <span style="color:var(--gut)">↑</span>':"")+"</td><td>"+p.goals+"</td><td>"+p.assists+"</td><td>"+p.shots+"</td><td>"+p.passes_ok+"/"+p.passes+"</td><td>"+note(p.rating,true)+"</td></tr>"}).join("")+"</tbody></table></div></section>"});
   return h;
 }
+
+// Ticker in newspaper style.
+var SAETZE={
+  goal:["What a moment for {t}!","{t} make it {s}.","The ball is in the net. {t} celebrate.","There it is! {t} strike."],
+  goal1:["Cool as you like from the spot.","He sends the keeper the wrong way.","No mistake from twelve yards."],
+  goal2:["A free kick right into the corner. Nothing the keeper could do.","Over the wall and in. Beautiful set piece."],
+  own_goal:["Bad luck for {t}: the ball goes in off their own player.","An own goal. {t} won't want to see that again."],
+  sub:["{t} make a change.","Fresh legs for {t}.","The coach reacts. Can the new men make a difference?"],
+  red:["{t} are down to ten.","Off he goes. A big blow for {t}."],
+  second_yellow:["Second yellow, so it's red. {t} are down to ten."],
+  penalty_missed:["Penalty missed! {t} waste a huge chance.","He fails from the spot!"],
+};
+function satz(k,e,m,stand){var a=SAETZE[k];if(!a)return "";var t=e.side===0?m.home:m.away;return a[e.seq%a.length].replace("{t}",t).replace("{s}",stand)}
+function vorname(p){if(!p||!p.full_name||p.full_name===p.name)return "";var f=p.full_name.split(" ");return f.length>1?f.slice(0,-1).join(" "):""}
+function spKarte(p,side,art,rechts){
+  return '<div class="gk-sp"><span class="trikot">'+trikot(side,p?p.number:null,p&&p.position==="GK")+'</span><span><span class="vor">'+esc(vorname(p))+'</span><span class="nam">'+esc(p?p.name:"?")+'</span>'+(art?'<span class="art">'+art+"</span>":"")+"</span>"+(rechts||"")+"</div>"}
+function wZelle(p,side,rein){
+  return '<div class="wz '+(rein?"rein":"raus")+'"><span class="pf">'+(rein?"↑":"↓")+'</span><span class="trikot">'+trikot(side,p?p.number:null,p&&p.position==="GK")+'</span><span><small>'+esc(vorname(p))+"</small><b>"+esc(p?p.name:"?")+"</b></span></div>"}
+function kopf(e,m,titel,sym,farbeK){
+  return '<div class="gk-kopf" style="background:'+(farbeK||farbe(e.side))+'"><span class="m">'+e.minute+"'</span><h3>"+esc(titel)+'</h3><span class="sym">'+sym+"</span></div>"}
+function tickerBloecke(m,alle){
+  // Chronological pass: running score, and subs of one side in the same minute go together.
+  var st=[0,0],out=[];
+  m.events.forEach(function(e){
+    if(e.kind==="goal")st[e.side]++;
+    if(e.kind==="own_goal")st[1-e.side]++;
+    if(!alle&&!e.key)return;
+    var last=out[out.length-1];
+    if(e.kind==="sub"&&last&&last.kind==="sub"&&last.side===e.side&&Math.abs(last.minute-e.minute)<=1){last.subs.push(e);return}
+    out.push({kind:e.kind,side:e.side,minute:e.minute,e:e,subs:[e],stand:[st[0],st[1]]});
+  });
+  return out.reverse();
+}
+function block(b,m){
+  var e=b.e,team=e.side===0?m.home:m.away,p=spieler(m,e.side,e.slot);
+  if(e.kind==="goal"||e.kind==="own_goal"){
+    var sc=e.kind==="goal"?e.side:1-e.side,fuer=sc===0?m.home:m.away;
+    var stand='<span class="stand" style="color:'+farbe(sc)+'">'+(sc===0?b.stand[0]+"<i> : </i>"+"<i>"+b.stand[1]+"</i>":"<i>"+b.stand[0]+" : </i>"+b.stand[1])+"</span>";
+    var art=e.kind==="own_goal"?"Own goal":e.detail===1?"Penalty":e.detail===2?"Free kick":"";
+    if(e.kind==="goal"&&e.other!=null){var a=spieler(m,e.side,e.other);art=(art?art+" · ":"")+"Assist "+esc(a?a.name:"?")}
+    var txt=satz(e.kind==="own_goal"?"own_goal":"goal",{side:sc,seq:e.seq},m,b.stand[0]+":"+b.stand[1]);
+    if(e.kind==="goal"&&e.detail)txt+=" "+satz("goal"+e.detail,e,m);
+    return '<section class="gk tor">'+kopf({minute:e.minute,side:sc},m,"Goal for "+fuer,"⚽")+'<div class="gk-in">'+spKarte(p,e.side,art,stand)+'<p class="gk-txt">'+esc(txt)+"</p></div></section>";
+  }
+  if(e.kind==="sub"){
+    var rows=b.subs.map(function(x){return '<div class="wb">'+wZelle(spieler(m,x.side,x.slot),x.side,true)+wZelle(x.other!=null?spieler(m,x.side,x.other):null,x.side,false)+"</div>"}).join("");
+    return '<section class="gk">'+kopf(e,m,b.subs.length>1?b.subs.length+" substitutions":"Substitution","⇄","var(--ueberlagerung);color:var(--text)")+'<div class="gk-in">'+rows+'<p class="gk-txt">'+esc(satz("sub",e,m))+"</p></div></section>";
+  }
+  if(e.kind==="red"||e.kind==="second_yellow"){
+    return '<section class="gk">'+kopf(e,m,e.kind==="red"?"Red card":"Second yellow",'<span class="kk '+(e.kind==="red"?"r":"gr")+'"></span>',"#3a1418")+'<div class="gk-in">'+spKarte(p,e.side,esc(team))+'<p class="gk-txt">'+esc(satz(e.kind,e,m))+"</p></div></section>";
+  }
+  if(e.kind==="penalty_missed"){
+    return '<section class="gk">'+kopf(e,m,"Penalty missed","✕","#4a3410")+'<div class="gk-in">'+spKarte(p,e.side,esc(team))+'<p class="gk-txt">'+esc(satz("penalty_missed",e,m))+"</p></div></section>";
+  }
+  var icon=e.kind==="yellow"?'<span class="kk g" style="width:11px;height:15px;vertical-align:-2px;margin-right:6px"></span>':"";
+  return '<div class="tk-z'+(e.key?"":" leise")+(e.kind==="chance"?" heiss":"")+'"><span class="m">'+e.minute+"'</span><span class=\"t\">"+icon+esc(e.text)+' <span style="color:var(--gedaempft);font-weight:500;font-size:13px">'+esc(team)+"</span></span></div>";
+}
 function tabTicker(m){
-  var alle=S.filter==="all";
-  var ev=m.events.filter(function(e){return alle||e.key}).reverse();
+  var alle=S.filter==="all",bl=tickerBloecke(m,alle);
   return '<div class="seg"><button class="pille" data-filter="key" aria-pressed="'+!alle+'">Key moments</button><button class="pille" data-filter="all" aria-pressed="'+alle+'">Everything</button></div>'+
-    '<section class="karte"><div class="k-kopf kf-presse"><h2 class="titel">Ticker</h2><small>minutes are estimates</small></div><div class="k-in">'+(ev.length?ev.map(function(e){return evZeile(e,m)}).join(""):'<div class="leer">Goals, chances, cards and substitutions will show up here.</div>')+"</div></section>";
+    (bl.length?'<div class="tk">'+bl.map(function(b){return block(b,m)}).join("")+'</div><div class="leer" style="font-size:12.5px;text-align:center">Minutes are estimates.</div>':'<section class="karte"><div class="k-in"><div class="leer">Goals, chances, cards and substitutions will show up here.</div></div></section>');
 }
 
 function binde(){
