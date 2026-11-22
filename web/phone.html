@@ -103,6 +103,11 @@ nav .dot{position:absolute;top:1px;right:calc(50% - 22px);min-width:16px;height:
 .kw{width:30px;height:30px;object-fit:contain;display:block;margin-left:auto;background:rgba(255,255,255,.92);border-radius:50%;padding:3px;box-sizing:border-box}
 .nr{position:absolute;inset:7px 0 0;text-align:center;font-family:var(--titel);font-style:italic;font-weight:800;font-size:13px;color:#fff}
 .npw{position:absolute;left:30px;top:-4px}
+.sp .trikot{width:40px;height:40px}.sp .trikot svg{width:40px;height:40px}.sp .nr{inset:9px 0 0;font-size:15px}.sp .npw{left:34px;top:-5px;z-index:2}
+.ovr{position:absolute;left:-10px;bottom:-3px;z-index:2;background:#14181f;color:#fff;font-size:10.5px;font-weight:700;line-height:1;padding:2px 3px;border-radius:4px;font-variant-numeric:tabular-nums}
+.zust{display:flex;align-items:center;gap:3px;margin-top:3px}
+.fp{display:grid;place-items:center;width:14px;height:14px;border-radius:3px;font-size:11px;font-weight:800;line-height:1;color:#14181f}
+.kb{width:34px;height:5px;border-radius:3px;background:rgba(0,0,0,.45);overflow:hidden}.kb i{display:block;height:100%}
 .sp .name{font-size:11.5px;font-weight:600;color:#fff;background:rgba(0,0,0,.45);border-radius:4px;padding:0 5px;white-space:nowrap;max-width:86px;overflow:hidden;text-overflow:ellipsis}
 .sp .mk{position:absolute;left:-6px;top:-4px;display:flex;gap:2px}
 .mk i{display:block;width:8px;height:11px;border-radius:2px}
@@ -301,6 +306,12 @@ function wappenTafel(el,m,side){
   if(!u||FEHLT[u])return;
   var img=new Image();img.alt="";img.onload=function(){if(el.dataset.bild===u)el.classList.add("mitbild")};img.onerror=function(){FEHLT[u]=1;img.remove()};img.src=u;el.appendChild(img);
 }
+// Form arrow (0 worst .. 4 best) and fitness bar; both only when the game data is there.
+var FORM=[["↓","#e5484d"],["↘","#f5a524"],["→","#f5d90a"],["↗","#9be15d"],["↑","#30c46c"]];
+function formPfeil(f){if(f==null||!FORM[f])return "";return '<span class="fp" style="background:'+FORM[f][1]+'" title="Form">'+FORM[f][0]+"</span>"}
+function kondBalken(k){if(k==null)return "";var c=k>=60?"#30c46c":k>=30?"#f5d90a":"#e5484d";return '<span class="kb" title="Fitness '+k+'%"><i style="width:'+k+"%;background:"+c+'"></i></span>'}
+function zustand(p){return p.form==null&&p.fitness==null?"":'<span class="zust">'+formPfeil(p.form)+kondBalken(p.fitness)+"</span>"}
+function ovrMarke(p){return p.ovr==null?"":'<span class="ovr" title="Overall">'+p.ovr+"</span>"}
 function trikot(side,nr,gk){var c=gk?"var(--b-kabine)":farbe(side);return '<svg viewBox="0 0 34 34" aria-hidden="true"><path d="M11 3 4 7l3 7 3-1.5V31h14V12.5l3 1.5 3-7-7-4c-1.2 2-3 3-5 3s-3.8-1-5-3z" fill="'+c+'" stroke="rgba(0,0,0,.35)" stroke-width="1"/><path d="M13 3.6 17 8l4-4.4" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="1.3"/></svg><span class="nr"'+(gk?"":' style="color:var(--'+(side?"gast":"heim")+'-text)"')+'>'+(nr==null?"":nr)+"</span>"}
 
 var ICON={goal:"G",own_goal:"OG",yellow:"",second_yellow:"",red:"",sub:"⇄",penalty_missed:"P",chance:"!",shot_wide:"↗",corner:"C",free_kick:"FK",offside:"OS"};
@@ -393,17 +404,18 @@ function tabXI(m){
   if(S.wechsel&&side===meineSeite(m))h+=wechselKarte(m);else if(gew)h+=detail(gew,m);
   h+='<section class="karte"><div class="k-kopf kf-heim" style="background:'+farbe(side)+';color:'+(side?"var(--gast-text)":"var(--heim-text)")+'"><h2 class="titel">'+esc(team)+'</h2><small>tap a shirt for details</small></div><div class="k-in"><div class="feld"><svg class="linien" viewBox="0 0 68 92" preserveAspectRatio="none" fill="none" stroke="rgba(255,255,255,.45)" stroke-width=".5"><rect x="2" y="2" width="64" height="88"/><line x1="2" y1="46" x2="66" y2="46"/><circle cx="34" cy="46" r="8"/><rect x="16" y="2" width="36" height="14"/><rect x="16" y="76" width="36" height="14"/><rect x="26" y="2" width="16" height="5"/><rect x="26" y="85" width="16" height="5"/></svg>';
   aufstellung(auf).forEach(function(o){var p=o.p;
-    h+='<button class="sp'+(S.gew===p.slot?" gew":"")+'" data-slot="'+p.slot+'" style="left:'+o.x+"%;top:"+o.y+'%" aria-label="'+esc(p.name)+", rating "+(p.rating==null?"none":p.rating.toFixed(1))+'"><span class="trikot">'+trikot(side,p.number,p.position==="GK")+'<span class="npw">'+note(p.rating,true)+'</span><span class="mk">'+(p.yellow?'<i class="g"></i>':"")+"</span></span><span class=\"name\">"+esc(p.name)+"</span></button>"});
+    h+='<button class="sp'+(S.gew===p.slot?" gew":"")+'" data-slot="'+p.slot+'" style="left:'+o.x+"%;top:"+o.y+'%" aria-label="'+esc(p.name)+", rating "+(p.rating==null?"none":p.rating.toFixed(1))+'"><span class="trikot">'+trikot(side,p.number,p.position==="GK")+foto(p)+ovrMarke(p)+'<span class="npw">'+note(p.rating,true)+'</span><span class="mk">'+(p.yellow?'<i class="g"></i>':"")+"</span></span>"+zustand(p)+"<span class=\"name\">"+esc(p.name)+"</span></button>"});
   h+="</div></div></section>";
   h+='<section class="karte"><div class="k-kopf kf-praes"><h2 class="titel">Bench &amp; off</h2><small>'+m.events.filter(function(e){return e.kind==="sub"&&e.side===side}).length+' subs made</small></div><div class="k-in liste">'+
     (bank.length?bank.map(function(p){var st=p.went_off?"subbed off":p.sent_off?"sent off":"on the bench";
-      return '<button class="zl" data-slot="'+p.slot+'"><span class="trikot" style="position:relative;width:34px;height:34px;display:inline-block">'+trikot(side,p.number,p.position==="GK")+'</span><span>'+esc(p.name)+"<small>"+st+"</small></span>"+posmarke(p.position)+note(p.rating,true)+"</button>"}).join(""):'<div class="leer">No bench players found.</div>')+"</div></section>";
+      return '<button class="zl" data-slot="'+p.slot+'"><span class="trikot" style="position:relative;width:34px;height:34px;display:inline-block">'+trikot(side,p.number,p.position==="GK")+foto(p)+ovrMarke(p)+'</span><span>'+esc(p.name)+"<small>"+st+"</small>"+zustand(p)+"</span>"+posmarke(p.position)+note(p.rating,true)+"</button>"}).join(""):'<div class="leer">No bench players found.</div>')+"</div></section>";
   if(!S.data.names)h+='<div class="leer" style="text-align:center">No player names: start PESM Coaching Zone with <b>--game</b> and your FL27 folder.</div>';
   return h;
 }
 function detail(p,m){
   var acc=p.passes?Math.round(p.passes_ok/p.passes*100)+"%":"–";
-  var kv=p.position==="GK"?[["Saves",p.saves],["Passes",p.passes],["Pass acc.",acc]]:[["Goals",p.goals],["Assists",p.assists],["Shots",p.shots+" ("+p.on_target+")"],["Passes",p.passes],["Pass acc.",acc],["Duels won",p.duels_won],["Intercept.",p.interceptions],["Touches",p.touches],["Fouls",p.fouls]];
+  var kv0=[];if(p.ovr!=null)kv0.push(["Overall",p.ovr]);if(p.fitness!=null)kv0.push(["Fitness",p.fitness+"%"]);if(p.form!=null)kv0.push(["Form",FORM[p.form]?FORM[p.form][0]:"–"]);
+  var kv=p.position==="GK"?[["Saves",p.saves],["Passes",p.passes],["Pass acc.",acc]]:[["Goals",p.goals],["Assists",p.assists],["Shots",p.shots+" ("+p.on_target+")"],["Passes",p.passes],["Pass acc.",acc],["Duels won",p.duels_won],["Intercept.",p.interceptions],["Touches",p.touches],["Fouls",p.fouls]];kv=kv0.concat(kv);
   return '<section class="karte" style="border:2px solid var(--akzent)"><div class="k-in detail"><div class="oben"><span class="trikot" style="position:relative;width:34px;height:34px;display:inline-block">'+trikot(p.side,p.number,p.position==="GK")+foto(p)+'</span><div style="flex:1;min-width:0"><h3 class="titel">'+esc(p.name)+"</h3><div style=\"font-size:13.5px;color:var(--text2)\">"+posmarke(p.position)+" "+esc(p.full_name&&p.full_name!==p.name?p.full_name:"")+(p.came_on?" · came on":"")+(p.went_off?" · subbed off":"")+(p.sent_off?" · sent off":"")+"</div></div>"+note(p.rating)+'</div><div class="kv">'+kv.map(function(x){return "<div><b>"+x[1]+"</b><span>"+x[0]+"</span></div>"}).join("")+'</div>'+(kannWechseln(p,m)?'<div class="knopfreihe"><button class="knopf" data-wechsel="'+p.slot+'">Suggest a sub</button><button class="knopf zweit" data-zu="1">Close</button></div>':'<button class="pille" data-zu="1" style="align-self:flex-start">Close</button>')+'</div></section>'}
 
 // ---- Substitutions -------------------------------------------------------------

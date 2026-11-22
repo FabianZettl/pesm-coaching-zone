@@ -483,6 +483,9 @@ impl Tracker {
                 side,
                 slot,
                 id: p.id,
+                ovr: info.and_then(|i| i.ovr),
+                form: None,
+                fitness: None,
                 name: info
                     .map(|i| {
                         if i.shirt_name.is_empty() {
@@ -778,6 +781,12 @@ pub struct PlayerView {
     pub full_name: String,
     pub number: Option<u32>,
     pub position: Option<&'static str>,
+    /// Overall rating (estimated from the database).
+    pub ovr: Option<u8>,
+    /// Form arrow 0 (worst) to 4 (best), once it can be read from the game.
+    pub form: Option<u8>,
+    /// Fitness 0-100, once it can be read from the game.
+    pub fitness: Option<u8>,
     /// Where the player plays now: a sub takes over the place of the player he replaced.
     pub role: Option<&'static str>,
     pub starter: bool,

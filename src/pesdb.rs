@@ -22,6 +22,8 @@ pub struct PlayerInfo {
     pub name: String,
     pub shirt_name: String,
     pub position: Option<&'static str>,
+    /// Overall rating, estimated from the 25 abilities (the game does not store it).
+    pub ovr: Option<u8>,
 }
 
 #[derive(Debug, Default)]
@@ -134,6 +136,45 @@ fn bits(rec: &[u8], bit: usize, width: u32) -> u32 {
     (u32::from_le_bytes(w) >> (bit & 7)) & ((1 << width) - 1)
 }
 
+/// Bit positions of the 25 abilities in a Player.bin record (6 bits, value + 40).
+/// 0..19 are outfield abilities, 20..24 goalkeeping.
+const ABILITY_BITS: [usize; 25] = [
+    370, 281, 352, 416, 263, 402, 396, 288, 250, 332, 306, 344, 358, 294, 390, 376, 338, 275, 312,
+    384, 326, 364, 269, 320, 300,
+];
+
+/// Overall rating as the game shows it, approximated (measured on 119 in-game values,
+/// usually within 1-2 points): `a * input + b`, where input is the mean of the 8 best of the
+/// 20 outfield abilities, or of the 5 goalkeeping abilities for a goalkeeper.
+pub fn estimate_ovr(rec: &[u8], pos: usize) -> Option<u8> {
+    if rec.len() < PLAYER_REC || pos > 12 {
+        return None;
+    }
+    let a: Vec<f32> = ABILITY_BITS
+        .iter()
+        .map(|&b| (bits(rec, b, 6) + 40) as f32)
+        .collect();
+    let input = if pos == 0 {
+        a[20..25].iter().sum::<f32>() / 5.0
+    } else {
+        let mut f = a[..20].to_vec();
+        f.sort_by(|x, y| y.total_cmp(x));
+        f[..8].iter().sum::<f32>() / 8.0
+    };
+    // GK, CB, LB, RB, DMF, CMF, LMF, RMF, AMF, LWF, RWF, SS, CF
+    let (k, d) = match pos {
+        0 => (1.067, -12.94),
+        1 => (1.439, -37.42),
+        2 | 3 => (1.073, -6.44),
+        4 => (1.583, -46.69),
+        5 => (1.409, -33.11),
+        8 => (1.474, -39.09),
+        6 | 7 | 9 | 10 => (1.492, -40.77),
+        _ => (1.558, -46.83),
+    };
+    Some((k * input + d).round().clamp(40.0, 99.0) as u8)
+}
+
 pub fn parse_players(data: &[u8]) -> HashMap<u32, PlayerInfo> {
     data.chunks_exact(PLAYER_REC)
         .filter_map(|r| {
@@ -146,6 +187,7 @@ pub fn parse_players(data: &[u8]) -> HashMap<u32, PlayerInfo> {
                         name: cstr(&r[68..129]),
                         shirt_name: cstr(&r[129..190]),
                         position: POSITIONS.get(pos).copied(),
+                        ovr: estimate_ovr(r, pos),
                     },
                 )
             })

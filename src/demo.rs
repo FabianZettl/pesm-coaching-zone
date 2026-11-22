@@ -70,6 +70,7 @@ pub fn database() -> Database {
                     name: n.to_string(),
                     shirt_name: n.to_uppercase(),
                     position,
+                    ovr: Some(70 + (id % 17) as u8),
                 },
             );
             db.assignments
