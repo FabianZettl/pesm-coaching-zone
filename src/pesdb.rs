@@ -46,28 +46,34 @@ pub struct Kit {
 
 /// `UniColor.bin`: per team u32 id, u8 count, then `count` entries of
 /// u16 kit kind, RGB colour 1, RGB colour 2.
+/// UniColor.bin records have a fixed size: u32 team id, u8 count, then 10 slots of
+/// [u16 kit, RGB1, RGB2]; only the first `count` slots are used.
+const KIT_SLOTS: usize = 10;
+const KIT_REC: usize = 5 + KIT_SLOTS * 8;
+
 pub fn parse_kits(data: &[u8]) -> HashMap<u32, Vec<Kit>> {
     let mut m = HashMap::new();
     let mut i = 0;
-    while i + 5 <= data.len() {
+    while i + KIT_REC <= data.len() {
         let id = u32_at(data, i);
         let n = data[i + 4] as usize;
-        let end = i + 5 + n * 8;
-        if n == 0 || n > 32 || end > data.len() {
+        if n > KIT_SLOTS {
             break;
         }
-        let kits = (0..n)
-            .map(|k| {
-                let e = &data[i + 5 + k * 8..i + 13 + k * 8];
-                Kit {
-                    kind: u16::from_le_bytes([e[0], e[1]]),
-                    color1: [e[2], e[3], e[4]],
-                    color2: [e[5], e[6], e[7]],
-                }
-            })
-            .collect();
-        m.insert(id, kits);
-        i = end;
+        if n > 0 {
+            let kits = (0..n)
+                .map(|k| {
+                    let e = &data[i + 5 + k * 8..i + 13 + k * 8];
+                    Kit {
+                        kind: u16::from_le_bytes([e[0], e[1]]),
+                        color1: [e[2], e[3], e[4]],
+                        color2: [e[5], e[6], e[7]],
+                    }
+                })
+                .collect();
+            m.insert(id, kits);
+        }
+        i += KIT_REC;
     }
     m
 }
@@ -469,6 +475,9 @@ mod tests {
                 d.extend(a);
                 d.extend(b);
             }
+            for _ in kits.len()..KIT_SLOTS {
+                d.extend([0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
+            }
         };
         team(
             126,
@@ -549,6 +558,9 @@ mod tests {
         let mut k = 126u32.to_le_bytes().to_vec();
         k.push(1);
         k.extend([0, 0, 0xef, 0xcf, 0x10, 0x28, 0x28, 0x28]);
+        k.resize(KIT_REC * 2, 0xff);
+        k[KIT_REC..KIT_REC + 5].copy_from_slice(&[127, 0, 0, 0, 1]);
+        k[KIT_REC + 5..KIT_REC + 13].copy_from_slice(&[0, 0, 1, 2, 3, 4, 5, 6]);
         std::fs::write(
             game.join("kits.cpk"),
             crate::cpk::tests::build(&[(KITS_IN_CPK, &pack(&k))], false),
@@ -556,6 +568,7 @@ mod tests {
         .unwrap();
         let kits = find_kits(&game);
         assert_eq!(kits[&126][0].color1, [0xef, 0xcf, 0x10]);
+        assert_eq!(kits[&127][0].color1, [1, 2, 3]);
         std::fs::remove_dir_all(&game).ok();
     }
 }
