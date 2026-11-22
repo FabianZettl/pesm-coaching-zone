@@ -141,7 +141,13 @@ fn load_names(args: &Args, cfg: &mut Config) -> Option<pesdb::Database> {
         .or(from_game)
         .or_else(|| cfg.pesdb.clone())?;
     match pesdb::Database::load(&folder) {
-        Ok(db) => {
+        Ok(mut db) => {
+            if db.kits.is_empty()
+                && let Some(g) = args.game.as_deref()
+            {
+                db.kits = pesdb::find_kits(g);
+            }
+            println!("Team colours: {} teams", db.kits.len());
             println!(
                 "Player names: {} players from {}",
                 db.players.len(),

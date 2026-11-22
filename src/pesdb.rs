@@ -302,6 +302,44 @@ pub fn find_in_game_folder(game: &Path) -> Option<PathBuf> {
     best.map(|(_, p)| p)
 }
 
+/// Kit colours for a game folder, wherever they are: extracted in a sider
+/// `cpk.root` folder, or inside a `.cpk` (the biggest `UniColor.bin` wins).
+pub fn find_kits(game: &Path) -> HashMap<u32, Vec<Kit>> {
+    let inis = [
+        game.join("sider.ini"),
+        game.join("SiderAddons").join("sider.ini"),
+    ];
+    let roots: Vec<PathBuf> = inis.iter().flat_map(|i| sider_roots(i)).collect();
+    let parse = |raw: Vec<u8>| unpack_or_raw(&raw).ok().map(|d| parse_kits(&d));
+    for r in &roots {
+        if let Some(k) = std::fs::read(r.join(KITS_IN_CPK)).ok().and_then(parse)
+            && !k.is_empty()
+        {
+            return k;
+        }
+    }
+    let mut best: Option<(u64, crate::cpk::Cpk)> = None;
+    let mut seen = std::collections::HashSet::new();
+    for d in std::iter::once(game.to_path_buf()).chain(roots) {
+        for p in crate::cpk::find_files(&d, 4) {
+            if !seen.insert(p.clone()) {
+                continue;
+            }
+            let Ok(c) = crate::cpk::Cpk::open(&p) else {
+                continue;
+            };
+            if let Some(n) = c.size_of(KITS_IN_CPK)
+                && best.as_ref().is_none_or(|(b, _)| n > *b)
+            {
+                best = Some((n, c));
+            }
+        }
+    }
+    best.and_then(|(_, c)| c.read(KITS_IN_CPK).ok())
+        .and_then(parse)
+        .unwrap_or_default()
+}
+
 /// The `cpk.root` folders named in a sider.ini.
 fn sider_roots(ini_path: &Path) -> Vec<PathBuf> {
     let Ok(ini) = std::fs::read_to_string(ini_path) else {
@@ -501,6 +539,23 @@ mod tests {
         assert!(found.ends_with("download/fl27_db.cpk"), "{found:?}");
         let db = Database::load(&found).unwrap();
         assert_eq!(db.players[&42].name, "Novak");
+        std::fs::remove_dir_all(&game).ok();
+    }
+
+    #[test]
+    fn finds_kits_in_another_cpk() {
+        let game = std::env::temp_dir().join(format!("cz-kits-{}", std::process::id()));
+        std::fs::create_dir_all(&game).unwrap();
+        let mut k = 126u32.to_le_bytes().to_vec();
+        k.push(1);
+        k.extend([0, 0, 0xef, 0xcf, 0x10, 0x28, 0x28, 0x28]);
+        std::fs::write(
+            game.join("kits.cpk"),
+            crate::cpk::tests::build(&[(KITS_IN_CPK, &pack(&k))], false),
+        )
+        .unwrap();
+        let kits = find_kits(&game);
+        assert_eq!(kits[&126][0].color1, [0xef, 0xcf, 0x10]);
         std::fs::remove_dir_all(&game).ok();
     }
 }
