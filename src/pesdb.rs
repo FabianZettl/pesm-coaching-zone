@@ -341,7 +341,7 @@ pub fn find_kits(game: &Path) -> HashMap<u32, Vec<Kit>> {
 }
 
 /// The `cpk.root` folders named in a sider.ini.
-fn sider_roots(ini_path: &Path) -> Vec<PathBuf> {
+pub(crate) fn sider_roots(ini_path: &Path) -> Vec<PathBuf> {
     let Ok(ini) = std::fs::read_to_string(ini_path) else {
         return vec![];
     };
@@ -515,7 +515,7 @@ mod tests {
         p[8..12].copy_from_slice(&42u32.to_le_bytes());
         p[68..74].copy_from_slice(b"Novak\0");
         let small = vec![0u8; PLAYER_REC];
-        let game = std::env::temp_dir().join(format!("cz-game-{}", std::process::id()));
+        let game = std::env::temp_dir().join(format!("cz-game-cpk-{}", std::process::id()));
         std::fs::create_dir_all(game.join("download")).unwrap();
         let sm = pack(&small);
         // A small database in one CPK, the full one in another: the bigger one wins.

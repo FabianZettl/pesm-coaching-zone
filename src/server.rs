@@ -9,7 +9,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
 
@@ -35,6 +35,8 @@ pub struct Shared {
     pub live: watch::Receiver<Live>,
     pub phones: Mutex<usize>,
     pub failures: Mutex<(u32, Option<Instant>)>,
+    /// Crests and photos; filled in the background once the game folder is indexed.
+    pub images: Arc<OnceLock<pesm_coaching_zone::images::Images>>,
 }
 
 pub fn router(shared: Arc<Shared>) -> Router {
@@ -47,6 +49,7 @@ pub fn router(shared: Arc<Shared>) -> Router {
         .route("/ws", get(ws))
         .route("/check", get(check))
         .route("/fonts/{name}", get(font))
+        .route("/img/{kind}/{id}", get(image))
         .with_state(shared)
 }
 
@@ -190,6 +193,46 @@ async fn font(axum::extract::Path(name): axum::extract::Path<String>) -> Respons
         bytes,
     )
         .into_response()
+}
+
+async fn image(
+    axum::extract::Path((kind, id)): axum::extract::Path<(String, String)>,
+    Query(q): Query<WsQuery>,
+    State(s): State<Arc<Shared>>,
+) -> Response {
+    if q.k.as_deref() != Some(s.token.as_str()) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let Ok(id) = id.parse::<u32>() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let images = s.images.clone();
+    let found = tokio::task::spawn_blocking(move || {
+        let im = images.get()?;
+        match kind.as_str() {
+            "team" => im.crest(id),
+            "player" => im.photo(id),
+            _ => None,
+        }
+    })
+    .await
+    .ok()
+    .flatten();
+    match found {
+        Some(png) => (
+            [
+                (header::CONTENT_TYPE, "image/png"),
+                (header::CACHE_CONTROL, "max-age=86400"),
+            ],
+            png.as_ref().clone(),
+        )
+            .into_response(),
+        None => (
+            StatusCode::NOT_FOUND,
+            [(header::CACHE_CONTROL, "max-age=600")],
+        )
+            .into_response(),
+    }
 }
 
 #[derive(Deserialize)]

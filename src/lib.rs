@@ -4,6 +4,7 @@
 //! The reading parts (`process`, `stats`, `pesdb`, `live`) are usable as a library.
 
 pub mod cpk;
+pub mod images;
 pub mod lineup;
 pub mod live;
 pub mod pesdb;

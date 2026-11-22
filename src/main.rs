@@ -19,6 +19,8 @@ const TICK: Duration = Duration::from_secs(2);
 struct Config {
     token: Option<String>,
     pesdb: Option<PathBuf>,
+    #[serde(default)]
+    game: Option<PathBuf>,
 }
 
 fn config_path() -> PathBuf {
@@ -86,8 +88,8 @@ fn parse_args() -> Args {
                     .and_then(|p| p.parse().ok())
                     .unwrap_or(DEFAULT_PORT)
             }
-            "--pesdb" => a.pesdb = it.next().map(PathBuf::from),
-            "--game" => a.game = it.next().map(PathBuf::from),
+            "--pesdb" => a.pesdb = it.next().map(|v| clean_path(&v)),
+            "--game" => a.game = it.next().map(|v| clean_path(&v)),
             "-h" | "--help" => {
                 println!("{HELP}");
                 std::process::exit(0);
@@ -99,6 +101,11 @@ fn parse_args() -> Args {
         }
     }
     a
+}
+
+/// Windows turns `"C:\Games\FL27\"` into `C:\Games\FL27"`: drop the stray quote.
+fn clean_path(v: &str) -> PathBuf {
+    PathBuf::from(v.trim().trim_matches('"'))
 }
 
 fn random_hex(bytes: usize) -> String {
@@ -165,6 +172,30 @@ fn load_names(args: &Args, cfg: &mut Config) -> Option<pesdb::Database> {
             None
         }
     }
+}
+
+/// The game folder for crests and photos: --game, else the one above the
+/// remembered database (the folder that holds SiderAddons), else the last one used.
+fn game_folder(args: &Args, cfg: &mut Config) -> Option<PathBuf> {
+    let above_db = || {
+        let db = args.pesdb.clone().or_else(|| cfg.pesdb.clone())?;
+        db.ancestors()
+            .find(|a| a.join("SiderAddons").is_dir() || a.join("sider.ini").is_file())
+            .map(|a| a.to_path_buf())
+    };
+    let g = args
+        .game
+        .clone()
+        .or_else(above_db)
+        .or_else(|| cfg.game.clone())?;
+    if !g.is_dir() {
+        return None;
+    }
+    if cfg.game.as_ref() != Some(&g) {
+        cfg.game = Some(g.clone());
+        save_config(cfg);
+    }
+    Some(g)
 }
 
 /// Reads the game every tick and publishes the live view.
@@ -338,6 +369,22 @@ async fn main() -> Result<()> {
     let demo = args.demo;
     std::thread::spawn(move || reader_loop(tx, db, demo));
 
+    let images = Arc::new(std::sync::OnceLock::new());
+    // In demo mode only with an explicit --game (handy to try the crests).
+    let want = !args.demo || args.game.is_some();
+    if let Some(g) = want.then(|| game_folder(&args, &mut cfg)).flatten() {
+        let images = images.clone();
+        std::thread::spawn(move || {
+            let im = pesm_coaching_zone::images::Images::from_game(&g);
+            println!(
+                "Crests: {} files, player photos: {} files.",
+                im.crest_count(),
+                im.photo_count()
+            );
+            let _ = images.set(im);
+        });
+    }
+
     let shared = Arc::new(Shared {
         token,
         code: code.clone(),
@@ -345,6 +392,7 @@ async fn main() -> Result<()> {
         live: rx,
         phones: Mutex::new(0),
         failures: Mutex::new((0, None)),
+        images,
     });
     let app = server::router(shared);
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", args.port))

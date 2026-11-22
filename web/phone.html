@@ -97,6 +97,10 @@ nav .dot{position:absolute;top:1px;right:calc(50% - 22px);min-width:16px;height:
 .sp *{pointer-events:none}
 .trikot{position:relative;width:34px;height:34px;display:inline-block;flex:none}
 .trikot svg{width:34px;height:34px;display:block}
+.trikot .foto{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 15%;border-radius:50%;background:var(--erhoehung);border:2px solid var(--linie);box-sizing:border-box;z-index:1}
+.wappen img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;z-index:1;display:none}
+.wappen.mitbild{background:none!important;color:transparent!important}.wappen.mitbild::after{display:none}.wappen.mitbild img{display:block}
+.kw{width:30px;height:30px;object-fit:contain;display:block;margin-left:auto;background:rgba(255,255,255,.92);border-radius:50%;padding:3px;box-sizing:border-box}
 .nr{position:absolute;inset:7px 0 0;text-align:center;font-family:var(--titel);font-style:italic;font-weight:800;font-size:13px;color:#fff}
 .npw{position:absolute;left:30px;top:-4px}
 .sp .name{font-size:11.5px;font-weight:600;color:#fff;background:rgba(0,0,0,.45);border-radius:4px;padding:0 5px;white-space:nowrap;max-width:86px;overflow:hidden;text-overflow:ellipsis}
@@ -197,9 +201,9 @@ nav .dot{position:absolute;top:1px;right:calc(50% - 22px);min-width:16px;height:
     <div class="tafel" id="tafel">
       <div class="verb ueberzeile"><span id="verb"><i></i>Connected</span><span><span id="abschnitt"></span><button class="thema" id="thema" aria-label="Switch light/dark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button></span></div>
       <div class="zeile">
-        <div class="tm"><div class="wappen h" id="w-h">H</div><b class="titel" id="n-h">Home</b><small id="tore-h"></small></div>
+        <div class="tm"><div class="wappen h" id="w-h"><span id="w-h-t">H</span></div><b class="titel" id="n-h">Home</b><small id="tore-h"></small></div>
         <div><div class="stand titel" id="stand">0:0</div><span class="minute" id="minute">–</span></div>
-        <div class="tm"><div class="wappen a" id="w-a">A</div><b class="titel" id="n-a">Away</b><small id="tore-a"></small></div>
+        <div class="tm"><div class="wappen a" id="w-a"><span id="w-a-t">A</span></div><b class="titel" id="n-a">Away</b><small id="tore-a"></small></div>
       </div>
       <div class="druck" aria-hidden="true"><i id="dr-h" style="background:#fff;width:50%"></i><i id="dr-a" style="background:var(--gast);width:50%"></i></div>
       <div class="druck-l"><span>Ball touches, this period</span><span id="dr-z"></span></div>
@@ -284,6 +288,19 @@ function teamFarben(m){
   });
 }
 function farbe(side){return side===0?"var(--heim)":"var(--gast)"}
+// Crests and player photos from the game's files; a missing one falls back quietly.
+var FEHLT={};
+function bildUrl(k,id){return "/img/"+k+"/"+id+"?k="+encodeURIComponent(token)}
+function fehlt(img,ersatz){FEHLT[img.getAttribute("src")]=1;if(ersatz!=null)img.replaceWith(document.createTextNode(ersatz));else img.remove()}
+function foto(p){if(!p||!p.id)return "";var u=bildUrl("player",p.id);return FEHLT[u]?"":'<img class="foto" alt="" src="'+u+'" onerror="fehlt(this)">'}
+function wappenKlein(m,side,ersatz){var id=m.team_ids&&m.team_ids[side];var u=id&&bildUrl("team",id);if(!u||FEHLT[u])return ersatz;return '<img class="kw" alt="" src="'+u+'" onerror="fehlt(this,\''+ersatz+'\')">'}
+function wappenTafel(el,m,side){
+  var id=m.team_ids&&m.team_ids[side],u=id?bildUrl("team",id):"";
+  if(el.dataset.bild===u)return;el.dataset.bild=u;el.classList.remove("mitbild");
+  var alt=el.querySelector("img");if(alt)alt.remove();
+  if(!u||FEHLT[u])return;
+  var img=new Image();img.alt="";img.onload=function(){if(el.dataset.bild===u)el.classList.add("mitbild")};img.onerror=function(){FEHLT[u]=1;img.remove()};img.src=u;el.appendChild(img);
+}
 function trikot(side,nr,gk){var c=gk?"var(--b-kabine)":farbe(side);return '<svg viewBox="0 0 34 34" aria-hidden="true"><path d="M11 3 4 7l3 7 3-1.5V31h14V12.5l3 1.5 3-7-7-4c-1.2 2-3 3-5 3s-3.8-1-5-3z" fill="'+c+'" stroke="rgba(0,0,0,.35)" stroke-width="1"/><path d="M13 3.6 17 8l4-4.4" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="1.3"/></svg><span class="nr"'+(gk?"":' style="color:var(--'+(side?"gast":"heim")+'-text)"')+'>'+(nr==null?"":nr)+"</span>"}
 
 var ICON={goal:"G",own_goal:"OG",yellow:"",second_yellow:"",red:"",sub:"⇄",penalty_missed:"P",chance:"!",shot_wide:"↗",corner:"C",free_kick:"FK",offside:"OS"};
@@ -306,7 +323,7 @@ function render(){
   $("verb").innerHTML='<i style="background:'+(S.offen?"var(--gut)":"var(--achtung)")+'"></i>'+(d&&d.demo?"Demo match":S.offen?"Connected to your PC":"Connecting");
   if(m){
     teamFarben(m);
-    $("n-h").textContent=m.home;$("n-a").textContent=m.away;$("w-h").textContent=kurz(m.home);$("w-a").textContent=kurz(m.away);
+    $("n-h").textContent=m.home;$("n-a").textContent=m.away;$("w-h-t").textContent=kurz(m.home);$("w-a-t").textContent=kurz(m.away);wappenTafel($("w-h"),m,0);wappenTafel($("w-a"),m,1);
     $("stand").textContent=m.score[0]+":"+m.score[1];
     $("minute").textContent=(m.minute_tracked?"":"~")+m.minute+"'  ·  "+m.period_label;
     $("abschnitt").textContent="";
@@ -334,7 +351,7 @@ function tabMatch(m,d){
   var letzte=m.events.filter(function(e){return e.key}).slice(-4).reverse();
   var top=m.players.filter(function(p){return p.rating!=null}).sort(function(a,b){return b.rating-a.rating})[0];
   var h=wartend(m,null)+'<section class="karte"><div class="k-kopf kf-presse"><h2 class="titel">Latest</h2><small>read from game memory</small></div><div class="k-in">'+(letzte.length?letzte.map(function(e){return evZeile(e,m)}).join(""):'<div class="leer">No goals, cards or subs yet.</div>')+"</div></section>";
-  if(top)h+='<section class="karte"><div class="k-kopf kf-finanzen"><h2 class="titel">Best on the pitch</h2><small>rating so far</small></div><div class="k-in"><div class="detail"><div class="oben"><span class="trikot" style="position:relative;width:34px;height:34px;display:inline-block">'+trikot(top.side,top.number,top.position==="GK")+'</span><div style="flex:1;min-width:0"><h3 class="titel">'+esc(top.name)+'</h3><div style="color:var(--text2);font-size:13.5px">'+posmarke(top.position)+" "+esc(top.side===0?m.home:m.away)+"</div></div>"+note(top.rating)+"</div></div></div></section>";
+  if(top)h+='<section class="karte"><div class="k-kopf kf-finanzen"><h2 class="titel">Best on the pitch</h2><small>rating so far</small></div><div class="k-in"><div class="detail"><div class="oben"><span class="trikot" style="position:relative;width:34px;height:34px;display:inline-block">'+trikot(top.side,top.number,top.position==="GK")+foto(top)+'</span><div style="flex:1;min-width:0"><h3 class="titel">'+esc(top.name)+'</h3><div style="color:var(--text2);font-size:13.5px">'+posmarke(top.position)+" "+esc(top.side===0?m.home:m.away)+"</div></div>"+note(top.rating)+"</div></div></div></section>";
   var r=function(l){for(var i=0;i<m.team_stats.length;i++)if(m.team_stats[i].label===l)return m.team_stats[i];return {home:0,away:0}};
   h+='<section class="karte"><div class="k-kopf kf-training"><h2 class="titel">At a glance</h2><small>'+esc(m.home)+" · "+esc(m.away)+'</small></div><div class="k-in">'+stz("Shots",r("Shots").home,r("Shots").away)+stz("On target",r("On target").home,r("On target").away)+stz("xG (simple)",m.xg[0],m.xg[1],true)+stz("Pass accuracy %",r("Pass accuracy %").home,r("Pass accuracy %").away)+"</div></section>";
   if(d.demo)h+='<div class="leer" style="text-align:center">Demo: made-up players and a random match.</div>';
@@ -387,7 +404,7 @@ function tabXI(m){
 function detail(p,m){
   var acc=p.passes?Math.round(p.passes_ok/p.passes*100)+"%":"–";
   var kv=p.position==="GK"?[["Saves",p.saves],["Passes",p.passes],["Pass acc.",acc]]:[["Goals",p.goals],["Assists",p.assists],["Shots",p.shots+" ("+p.on_target+")"],["Passes",p.passes],["Pass acc.",acc],["Duels won",p.duels_won],["Intercept.",p.interceptions],["Touches",p.touches],["Fouls",p.fouls]];
-  return '<section class="karte" style="border:2px solid var(--akzent)"><div class="k-in detail"><div class="oben"><span class="trikot" style="position:relative;width:34px;height:34px;display:inline-block">'+trikot(p.side,p.number,p.position==="GK")+'</span><div style="flex:1;min-width:0"><h3 class="titel">'+esc(p.name)+"</h3><div style=\"font-size:13.5px;color:var(--text2)\">"+posmarke(p.position)+" "+esc(p.full_name&&p.full_name!==p.name?p.full_name:"")+(p.came_on?" · came on":"")+(p.went_off?" · subbed off":"")+(p.sent_off?" · sent off":"")+"</div></div>"+note(p.rating)+'</div><div class="kv">'+kv.map(function(x){return "<div><b>"+x[1]+"</b><span>"+x[0]+"</span></div>"}).join("")+'</div>'+(kannWechseln(p,m)?'<div class="knopfreihe"><button class="knopf" data-wechsel="'+p.slot+'">Suggest a sub</button><button class="knopf zweit" data-zu="1">Close</button></div>':'<button class="pille" data-zu="1" style="align-self:flex-start">Close</button>')+'</div></section>'}
+  return '<section class="karte" style="border:2px solid var(--akzent)"><div class="k-in detail"><div class="oben"><span class="trikot" style="position:relative;width:34px;height:34px;display:inline-block">'+trikot(p.side,p.number,p.position==="GK")+foto(p)+'</span><div style="flex:1;min-width:0"><h3 class="titel">'+esc(p.name)+"</h3><div style=\"font-size:13.5px;color:var(--text2)\">"+posmarke(p.position)+" "+esc(p.full_name&&p.full_name!==p.name?p.full_name:"")+(p.came_on?" · came on":"")+(p.went_off?" · subbed off":"")+(p.sent_off?" · sent off":"")+"</div></div>"+note(p.rating)+'</div><div class="kv">'+kv.map(function(x){return "<div><b>"+x[1]+"</b><span>"+x[0]+"</span></div>"}).join("")+'</div>'+(kannWechseln(p,m)?'<div class="knopfreihe"><button class="knopf" data-wechsel="'+p.slot+'">Suggest a sub</button><button class="knopf zweit" data-zu="1">Close</button></div>':'<button class="pille" data-zu="1" style="align-self:flex-start">Close</button>')+'</div></section>'}
 
 // ---- Substitutions -------------------------------------------------------------
 var GRUPPE={GK:"GK",CB:"DEF",LB:"DEF",RB:"DEF",DMF:"MID",CMF:"MID",LMF:"MID",RMF:"MID",AMF:"MID",LWF:"ATT",RWF:"ATT",SS:"ATT",CF:"ATT"};
@@ -415,7 +432,7 @@ function wechselKarte(m){
   var raus=spieler(m,meineSeite(m),S.wechsel.raus);if(!raus){S.wechsel=null;return ""}
   var lim=(m.subs.limit&&m.subs.limit[raus.side])||5,left=lim-subsUsed(m,raus.side);
   var h='<section class="karte" style="border:2px solid var(--b-presse)"><div class="k-kopf kf-presse"><h2 class="titel">Sub ideas</h2><small>'+Math.max(0,left)+" of "+lim+' left</small></div><div class="k-in">';
-  h+='<div class="detail"><div class="oben"><span class="trikot">'+trikot(raus.side,raus.number,raus.position==="GK")+'</span><div style="flex:1;min-width:0"><h3 class="titel">'+esc(raus.name)+' off</h3><div style="font-size:13.5px;color:var(--text2)">'+posmarke(raus.role||raus.position)+"</div></div>"+note(raus.rating)+"</div></div>";
+  h+='<div class="detail"><div class="oben"><span class="trikot">'+trikot(raus.side,raus.number,raus.position==="GK")+foto(raus)+'</span><div style="flex:1;min-width:0"><h3 class="titel">'+esc(raus.name)+' off</h3><div style="font-size:13.5px;color:var(--text2)">'+posmarke(raus.role||raus.position)+"</div></div>"+note(raus.rating)+"</div></div>";
   if(S.wechsel.rein!=null){var q=spieler(m,raus.side,S.wechsel.rein);
     h+='<div class="hinweis-z" style="font-size:16px">Bring on <b>'+esc(q.name)+"</b> for <b>"+esc(raus.name)+'</b>.<br><span style="font-size:13.5px;color:var(--text2)">Make the change in FL27: pause, open Substitutions and swap the two. The phone shows it as soon as it is requested.</span></div><div class="knopfreihe"><button class="knopf" data-abbruch="1">Got it</button><button class="knopf zweit" data-zurueck="1">Other player</button></div>';
     return h+"</div></section>"}
@@ -454,9 +471,9 @@ var SAETZE={
 function satz(k,e,m,stand){var a=SAETZE[k];if(!a)return "";var t=e.side===0?m.home:m.away;return a[e.seq%a.length].replace("{t}",t).replace("{s}",stand)}
 function vorname(p){if(!p||!p.full_name||p.full_name===p.name)return "";var f=p.full_name.split(" ");return f.length>1?f.slice(0,-1).join(" "):""}
 function spKarte(p,side,art,rechts){
-  return '<div class="gk-sp"><span class="trikot">'+trikot(side,p?p.number:null,p&&p.position==="GK")+'</span><span><span class="vor">'+esc(vorname(p))+'</span><span class="nam">'+esc(p?p.name:"?")+'</span>'+(art?'<span class="art">'+art+"</span>":"")+"</span>"+(rechts||"")+"</div>"}
+  return '<div class="gk-sp"><span class="trikot">'+trikot(side,p?p.number:null,p&&p.position==="GK")+foto(p)+'</span><span><span class="vor">'+esc(vorname(p))+'</span><span class="nam">'+esc(p?p.name:"?")+'</span>'+(art?'<span class="art">'+art+"</span>":"")+"</span>"+(rechts||"")+"</div>"}
 function wZelle(p,side,rein){
-  return '<div class="wz '+(rein?"rein":"raus")+'"><span class="pf">'+(rein?"↑":"↓")+'</span><span class="trikot">'+trikot(side,p?p.number:null,p&&p.position==="GK")+'</span><span><small>'+esc(vorname(p))+"</small><b>"+esc(p?p.name:"?")+"</b></span></div>"}
+  return '<div class="wz '+(rein?"rein":"raus")+'"><span class="pf">'+(rein?"↑":"↓")+'</span><span class="trikot">'+trikot(side,p?p.number:null,p&&p.position==="GK")+foto(p)+'</span><span><small>'+esc(vorname(p))+"</small><b>"+esc(p?p.name:"?")+"</b></span></div>"}
 function kopf(e,m,titel,sym,farbeK){
   return '<div class="gk-kopf'+(farbeK?"":" s"+e.side)+'" style="background:'+(farbeK||farbe(e.side))+'"><span class="m">'+e.minute+"'</span><h3>"+esc(titel)+'</h3><span class="sym">'+sym+"</span></div>"}
 function tickerBloecke(m,alle){
@@ -481,7 +498,7 @@ function block(b,m){
     if(e.kind==="goal"&&e.other!=null){var a=spieler(m,e.side,e.other);art=(art?art+" · ":"")+"Assist "+esc(a?a.name:"?")}
     var txt=satz(e.kind==="own_goal"?"own_goal":"goal",{side:sc,seq:e.seq},m,b.stand[0]+":"+b.stand[1]);
     if(e.kind==="goal"&&e.detail)txt+=" "+satz("goal"+e.detail,e,m);
-    return '<section class="gk tor">'+kopf({minute:e.minute,side:sc},m,"Goal for "+fuer,"⚽")+'<div class="gk-in">'+spKarte(p,e.side,art,stand)+'<p class="gk-txt">'+esc(txt)+"</p></div></section>";
+    return '<section class="gk tor">'+kopf({minute:e.minute,side:sc},m,"Goal for "+fuer,wappenKlein(m,sc,"⚽"))+'<div class="gk-in">'+spKarte(p,e.side,art,stand)+'<p class="gk-txt">'+esc(txt)+"</p></div></section>";
   }
   if(e.kind==="sub"){
     var rows=b.subs.map(function(x){return '<div class="wb">'+wZelle(spieler(m,x.side,x.slot),x.side,true)+wZelle(x.other!=null?spieler(m,x.side,x.other):null,x.side,false)+"</div>"}).join("");

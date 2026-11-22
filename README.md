@@ -14,6 +14,7 @@ You play FL27 full screen on your PC. Your phone sits next to you and shows the 
 - **XI:** the eleven players actually on the pitch, in the roles they play (a sub takes over the role of the player he replaced), with live ratings. Tap a shirt for the player's stats. Bench and subs are included.
 - **Sub ideas:** tap one of your players and get the three best fits from your bench (or browse the whole bench). Make the change in FL27's pause menu; the phone shows it as soon as it's requested. Making the sub directly from the phone is planned for the next version.
 - **Team colours** from your mod's kits, for the scoreboard, shirts and ticker.
+- **Club crests and player photos** from your game and mods, where they exist.
 - **Stats:** shots, xG, passes, pass accuracy, duels, corners, fouls, cards and saves, plus the flow per 15 minutes and a player table
 - **Ticker:** big cards for goals (with assist and score), red cards, missed penalties and substitutions, plus big chances and yellow cards. Switch to "Everything" to also see corners, free kicks, offsides and shots wide.
 - **Vibration** when a goal, a card or a missed penalty happens
@@ -83,6 +84,7 @@ FL27 keeps a statistics record per player and per 15-minute period in memory. PE
 - **Line-ups and substitutions** come from the game's live line-up and its substitution queue, so the XI tab shows exactly who is on the pitch. If that part of memory can't be found, the program falls back to guessing: a sub is detected when a bench player starts playing, and the player who went off is the one who stopped running.
 - **Roles** come from the formation the game keeps next to the live line-up (home team). For the away team a sub gets the role of the player he replaced.
 - **Team colours** come from `UniColor.bin` in the same mod folder as the player database. If the two teams look alike, the away team gets its change kit colour.
+- **Crests and photos** come from `common/render/symbol/flag/e_<team id>_*.png|dds` and `.../player/<player id>.png|dds`. The app looks in your active sider `cpk.root` folders first, then in the game's `.cpk` files (`download`, then `Data`), then in other livecpk folders and `SiderAddons/content`. 3D face models are not used. Without `--game`, the app uses the game folder above the remembered database, or the one from last time.
 - **Big chances** are shots on target that the keeper saved. A missed penalty is a penalty shot without a goal.
 - **Ratings** are a simple formula, not the game's own rating.
 - **Supported game version:** `FL_2027.exe` 1.00. A game update can move things in memory. If the stats stop showing up, please open an issue.

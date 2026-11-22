@@ -652,6 +652,7 @@ impl Tracker {
             home: team_name(0),
             away: team_name(1),
             colors: db.map_or([None, None], |d| d.team_colors(teams)),
+            team_ids: teams,
             score,
             period: cur,
             minute: self.minute_in(cur, cur),
@@ -821,6 +822,8 @@ pub struct MatchView {
     pub away: String,
     /// Team colours from the mod's kits (`#rrggbb`), if known.
     pub colors: [Option<String>; 2],
+    /// Team ids from the database, for crests.
+    pub team_ids: [Option<u32>; 2],
     pub score: [u32; 2],
     pub period: usize,
     pub minute: u32,
