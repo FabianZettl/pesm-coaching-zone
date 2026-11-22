@@ -18,6 +18,16 @@ pub const STARTERS: usize = 11;
 /// Record heads, low 16 bits only: the upper bytes vary by match (seen 00 00 and 07 07).
 pub const HEAD: [u32; 2] = [65533, 65534];
 
+/// A record head of `side`: low 16 bits fd ff / fe ff, upper 16 bits anything but ff ff
+/// (that would just be -3 / -2).
+fn is_head(v: u32, side: usize) -> bool {
+    v & 0xffff == HEAD[side] && v >> 16 != 0xffff
+}
+
+fn is_player_id(v: u32) -> bool {
+    (1..1_000_000).contains(&v)
+}
+
 /// Stat kinds confirmed in real matches.
 pub mod kind {
     pub const GOAL: usize = 0;
@@ -81,7 +91,7 @@ impl Snapshot {
                 .map(|i| {
                     let r = buf.get(i * RECORD..(i + 1) * RECORD)?;
                     let u = |o: usize| u32::from_le_bytes(r[o..o + 4].try_into().unwrap());
-                    if u(0) & 0xffff != HEAD[s] || u(4) == 0 {
+                    if !is_head(u(0), s) || !is_player_id(u(4)) {
                         return None;
                     }
                     let vals = (0..KINDS * PERIODS).map(|j| u(8 + j * 4)).collect();
@@ -197,7 +207,14 @@ pub fn find_blocks(mem: &dyn Memory) -> Vec<u64> {
             let u = |o: usize| u32::from_le_bytes(buf[o..o + 4].try_into().unwrap());
             let mut i = 0;
             while i + SIDE_STRIDE + 4 <= buf.len() && i < CHUNK {
-                if u(i) & 0xffff == HEAD[0] && u(i + SIDE_STRIDE) & 0xffff == HEAD[1] {
+                // A real block: the same head on three slots in a row, the away side
+                // SIDE_STRIDE further, and a plausible player id.
+                if is_head(u(i), 0)
+                    && u(i + RECORD) == u(i)
+                    && u(i + 2 * RECORD) == u(i)
+                    && is_head(u(i + SIDE_STRIDE), 1)
+                    && is_player_id(u(i + 4))
+                {
                     let addr = r.start + (off + i) as u64;
                     found.push(addr);
                 }
@@ -320,6 +337,24 @@ mod tests {
         let s = Snapshot::read(&m, blocks[0]).unwrap();
         assert_eq!(s.sides[1][17].as_ref().unwrap().id, 2017);
         assert_eq!(s.score(), [2, 1]);
+    }
+
+    #[test]
+    fn ignores_stray_heads() {
+        let mut bytes = vec![0u8; 2 * SIDE_STRIDE + 0x4000];
+        // fd ff here and fe ff one side further, but no run of slots: noise.
+        bytes[0x100..0x104].copy_from_slice(&[0xfd, 0xff, 0x12, 0x34]);
+        bytes[0x104..0x108].copy_from_slice(&5u32.to_le_bytes());
+        let o = 0x100 + SIDE_STRIDE;
+        bytes[o..o + 4].copy_from_slice(&[0xfe, 0xff, 0x12, 0x34]);
+        // -3 repeated is not a head either.
+        for k in 0..3 {
+            let r = 0x200 + k * RECORD;
+            bytes[r..r + 4].copy_from_slice(&(-3i32).to_le_bytes());
+            bytes[r + 4..r + 8].copy_from_slice(&5u32.to_le_bytes());
+        }
+        let m = FakeMem { base: 0, bytes };
+        assert!(find_blocks(&m).is_empty());
     }
 
     #[test]
