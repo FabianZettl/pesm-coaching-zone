@@ -59,7 +59,7 @@ USAGE: pesm-coaching-zone [OPTIONS]
 
 OPTIONS:
   --game <folder>    FL27 game folder (with sider.ini). Used to find player names.
-  --pesdb <folder>   pesdb folder with Player.bin, if you want to pick it yourself.
+  --pesdb <path>     pesdb folder with Player.bin, or a .cpk that contains it.
   --port <number>    Port for the phone page (default 8317).
   --demo             Play a made-up match, no game needed.
   --no-browser       Don't open the PC page in the browser.
@@ -123,10 +123,22 @@ fn open_browser(url: &str) {
 }
 
 fn load_names(args: &Args, cfg: &mut Config) -> Option<pesdb::Database> {
+    let from_game = args.game.as_deref().and_then(|g| {
+        println!("Looking for the player database in {} ...", g.display());
+        let found = pesdb::find_in_game_folder(g);
+        if found.is_none() {
+            eprintln!(
+                "No player database found there. Checked the sider.ini cpk.root folders for \
+                 common/etc/pesdb/Player.bin and all .cpk files in the game folder.\n\
+                 Make sure --game points at the folder with FL_2027.exe, or use --pesdb <folder or .cpk>."
+            );
+        }
+        found
+    });
     let folder = args
         .pesdb
         .clone()
-        .or_else(|| args.game.as_deref().and_then(pesdb::find_in_game_folder))
+        .or(from_game)
         .or_else(|| cfg.pesdb.clone())?;
     match pesdb::Database::load(&folder) {
         Ok(db) => {

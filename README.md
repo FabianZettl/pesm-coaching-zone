@@ -42,7 +42,12 @@ The game's memory only holds player ids. To show names, shirt numbers and positi
 pesm-coaching-zone --game "C:\Games\Football Life 2027"
 ```
 
-It reads `sider.ini` there (or in `SiderAddons/`) and uses the database of the first mod in the `cpk.root` list that has one (`…/common/etc/pesdb/Player.bin`). You can also point at that folder directly with `--pesdb <folder>`. The choice is remembered.
+Use the folder that contains `FL_2027.exe`. The program looks for the database (`common/etc/pesdb/Player.bin`) in this order:
+
+1. Extracted, in the first mod of the `cpk.root` list in `sider.ini` (or `SiderAddons/sider.ini`) that has one.
+2. Inside the `.cpk` files in the game folder and in those mod folders. You don't need to extract anything. If several CPKs contain a database, the biggest one is used.
+
+You can also point at a database directly with `--pesdb <folder or .cpk>`. The choice is remembered. The PC window says which database it loaded, or what it searched if it found none. Team colours come from the same mod (`UniColor.bin`).
 
 ### Linux (Wine/Proton/Lutris)
 

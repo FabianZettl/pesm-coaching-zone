@@ -87,6 +87,19 @@ fn dist(a: [u8; 3], b: [u8; 3]) -> u32 {
         .sum()
 }
 
+/// Where the database sits inside a CPK.
+pub const PESDB_IN_CPK: &str = "common/etc/pesdb";
+const KITS_IN_CPK: &str = "common/character0/model/character/uniform/team/UniColor.bin";
+
+/// Unpacks a WESYS container, or returns the bytes as they are if they aren't one.
+pub fn unpack_or_raw(raw: &[u8]) -> Result<Vec<u8>> {
+    if raw.len() >= 16 && &raw[3..8] == b"WESYS" {
+        unpack(raw)
+    } else {
+        Ok(raw.to_vec())
+    }
+}
+
 pub fn unpack(raw: &[u8]) -> Result<Vec<u8>> {
     if raw.len() < 16 || &raw[3..8] != b"WESYS" {
         bail!("not a WESYS container");
@@ -161,29 +174,46 @@ pub fn parse_assignments(data: &[u8]) -> HashMap<u32, Vec<(u32, u32)>> {
 }
 
 impl Database {
-    /// Loads a pesdb folder (the one containing Player.bin).
-    pub fn load(folder: &Path) -> Result<Self> {
-        let read = |n: &str| -> Result<Vec<u8>> {
-            let p = folder.join(n);
-            unpack(&std::fs::read(&p).with_context(|| format!("reading {}", p.display()))?)
-        };
-        Ok(Self {
-            players: parse_players(&read("Player.bin")?),
-            teams: read("Team.bin")
-                .map(|d| parse_teams(&d))
-                .unwrap_or_default(),
-            assignments: read("PlayerAssignment.bin")
-                .map(|d| parse_assignments(&d))
-                .unwrap_or_default(),
-            kits: folder
+    /// Loads the database from a pesdb folder (the one containing Player.bin)
+    /// or from a `.cpk` that contains `common/etc/pesdb/Player.bin`.
+    pub fn load(source: &Path) -> Result<Self> {
+        let is_cpk = source
+            .extension()
+            .is_some_and(|x| x.eq_ignore_ascii_case("cpk"));
+        let (read, kits_raw): (Box<dyn Fn(&str) -> Result<Vec<u8>>>, Option<Vec<u8>>) = if is_cpk {
+            let c = crate::cpk::Cpk::open(source)?;
+            let kits = c.read(KITS_IN_CPK).ok();
+            (
+                Box::new(move |n: &str| c.read(&format!("{PESDB_IN_CPK}/{n}"))),
+                kits,
+            )
+        } else {
+            let folder = source.to_path_buf();
+            let kits = source
                 .parent()
                 .and_then(Path::parent)
                 .map(|common| common.join("character0/model/character/uniform/team/UniColor.bin"))
-                .and_then(|p| std::fs::read(p).ok())
-                .and_then(|raw| unpack(&raw).ok())
+                .and_then(|p| std::fs::read(p).ok());
+            (
+                Box::new(move |n: &str| {
+                    let p = folder.join(n);
+                    std::fs::read(&p).with_context(|| format!("reading {}", p.display()))
+                }),
+                kits,
+            )
+        };
+        let get = |n: &str| read(n).and_then(|raw| unpack_or_raw(&raw));
+        Ok(Self {
+            players: parse_players(&get("Player.bin")?),
+            teams: get("Team.bin").map(|d| parse_teams(&d)).unwrap_or_default(),
+            assignments: get("PlayerAssignment.bin")
+                .map(|d| parse_assignments(&d))
+                .unwrap_or_default(),
+            kits: kits_raw
+                .and_then(|raw| unpack_or_raw(&raw).ok())
                 .map(|d| parse_kits(&d))
                 .unwrap_or_default(),
-            folder: folder.to_path_buf(),
+            folder: source.to_path_buf(),
         })
     }
 
@@ -235,13 +265,65 @@ impl Database {
 /// `sider.ini` whose folder contains `common/etc/pesdb/Player.bin`.
 /// `sider.ini` may sit in the game folder or in `SiderAddons/` (FL27); `cpk.root` paths are
 /// relative to the folder of the ini.
+/// Finds the player database for a game folder: first an extracted one in a
+/// sider `cpk.root` folder, then inside the `.cpk` files under the game folder
+/// (and the sider roots). Among CPKs, the one with the biggest `Player.bin` wins,
+/// since that is the most complete database.
 pub fn find_in_game_folder(game: &Path) -> Option<PathBuf> {
-    [
+    let inis = [
         game.join("sider.ini"),
         game.join("SiderAddons").join("sider.ini"),
-    ]
-    .iter()
-    .find_map(|ini| from_sider_ini(ini))
+    ];
+    if let Some(db) = inis.iter().find_map(|ini| from_sider_ini(ini)) {
+        return Some(db);
+    }
+    let mut dirs = vec![game.to_path_buf()];
+    for ini in &inis {
+        dirs.extend(sider_roots(ini));
+    }
+    let player = format!("{PESDB_IN_CPK}/Player.bin");
+    let mut best: Option<(u64, PathBuf)> = None;
+    let mut seen = std::collections::HashSet::new();
+    for d in dirs {
+        for p in crate::cpk::find_files(&d, 4) {
+            if !seen.insert(p.clone()) {
+                continue;
+            }
+            let Ok(c) = crate::cpk::Cpk::open(&p) else {
+                continue;
+            };
+            if let Some(n) = c.size_of(&player)
+                && best.as_ref().is_none_or(|(b, _)| n > *b)
+            {
+                best = Some((n, p));
+            }
+        }
+    }
+    best.map(|(_, p)| p)
+}
+
+/// The `cpk.root` folders named in a sider.ini.
+fn sider_roots(ini_path: &Path) -> Vec<PathBuf> {
+    let Ok(ini) = std::fs::read_to_string(ini_path) else {
+        return vec![];
+    };
+    let Some(base) = ini_path.parent() else {
+        return vec![];
+    };
+    ini.lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with(';') && !l.starts_with('#'))
+        .filter_map(|l| l.split_once('='))
+        .filter(|(k, _)| k.trim() == "cpk.root")
+        .map(|(_, v)| {
+            let v = v.trim().trim_matches('"').replace('\\', "/");
+            if Path::new(&v).is_absolute() || v.contains(':') {
+                PathBuf::from(&v)
+            } else {
+                base.join(v.trim_start_matches("./"))
+            }
+        })
+        .collect()
 }
 
 fn from_sider_ini(ini_path: &Path) -> Option<PathBuf> {
@@ -387,5 +469,38 @@ mod tests {
             db.team_colors([None, Some(126)]),
             [None, Some("#efcf10".into())]
         );
+    }
+
+    #[test]
+    fn loads_from_a_cpk_in_the_game_folder() {
+        let mut p = vec![0u8; PLAYER_REC];
+        p[8..12].copy_from_slice(&42u32.to_le_bytes());
+        p[68..74].copy_from_slice(b"Novak\0");
+        let small = vec![0u8; PLAYER_REC];
+        let game = std::env::temp_dir().join(format!("cz-game-{}", std::process::id()));
+        std::fs::create_dir_all(game.join("download")).unwrap();
+        let sm = pack(&small);
+        // A small database in one CPK, the full one in another: the bigger one wins.
+        std::fs::write(
+            game.join("download/dt80_a.cpk"),
+            crate::cpk::tests::build(&[("common/etc/pesdb/Player.bin", &sm)], false),
+        )
+        .unwrap();
+        let big = pack(&{
+            let mut v = p.clone();
+            v.extend(vec![0u8; PLAYER_REC]);
+            v
+        });
+        std::fs::write(
+            game.join("download/fl27_db.cpk"),
+            crate::cpk::tests::build(&[("common/etc/pesdb/Player.bin", &big)], true),
+        )
+        .unwrap();
+        std::fs::write(game.join("download/broken.cpk"), b"not a cpk").unwrap();
+        let found = find_in_game_folder(&game).unwrap();
+        assert!(found.ends_with("download/fl27_db.cpk"), "{found:?}");
+        let db = Database::load(&found).unwrap();
+        assert_eq!(db.players[&42].name, "Novak");
+        std::fs::remove_dir_all(&game).ok();
     }
 }
