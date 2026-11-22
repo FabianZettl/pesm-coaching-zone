@@ -64,6 +64,7 @@ impl Images {
             if let Some(sym) = symbol_dir(r) {
                 me.add_dir(&sym);
             }
+            me.add_faces(r);
         }
         let mut archives = vec![];
         for sub in ["download", "Data"] {
@@ -94,6 +95,7 @@ impl Images {
                 if let Some(sym) = symbol_dir(&o) {
                     me.add_dir(&sym);
                 }
+                me.add_faces(&o);
             }
         }
         if let Some(content) = sider.as_ref().and_then(|s| find_ci(s, "content")) {
@@ -153,6 +155,33 @@ impl Images {
         }
     }
 
+    /// Facepacks: `<root>/Asset/model/character/face/real/<player id>/portrait.dds`.
+    fn add_faces(&mut self, root: &Path) {
+        let Some(real) = ["Asset", "model", "character", "face", "real"]
+            .iter()
+            .try_fold(root.to_path_buf(), |p, n| find_ci(&p, n))
+        else {
+            return;
+        };
+        let Ok(rd) = std::fs::read_dir(&real) else {
+            return;
+        };
+        self.sources += 1;
+        for e in rd.flatten() {
+            let Ok(id) = e.file_name().to_string_lossy().parse::<u32>() else {
+                continue;
+            };
+            for ext in ["dds", "png"] {
+                if let Some(f) = find_ci(&e.path(), &format!("portrait.{ext}"))
+                    && f.is_file()
+                {
+                    self.add(format!("player/{id}.{ext}"), Loc::File(f));
+                    break;
+                }
+            }
+        }
+    }
+
     fn add_cpk(&mut self, path: PathBuf) {
         let Ok(c) = Cpk::open(&path) else {
             return;
@@ -162,6 +191,10 @@ impl Images {
         let mut any = false;
         let mut keys: Vec<(String, String)> = vec![];
         for name in c.files.keys() {
+            if let Some(k) = portrait_key(name) {
+                keys.push((k, name.clone()));
+                continue;
+            }
             let Some(pos) = name.find("render/symbol/") else {
                 continue;
             };
@@ -229,6 +262,15 @@ impl Images {
                 .map(move |x| format!("player/{player}.{x}")),
         )
     }
+}
+
+/// `.../face/real/<id>/portrait.dds` (lower case) -> `player/<id>.dds`.
+fn portrait_key(name: &str) -> Option<String> {
+    let pos = name.find("face/real/")?;
+    let (id, file) = name[pos + "face/real/".len()..].split_once('/')?;
+    let id: u32 = id.parse().ok()?;
+    let ext = file.strip_prefix("portrait.")?;
+    matches!(ext, "dds" | "png").then(|| format!("player/{id}.{ext}"))
 }
 
 /// `dir/<name>`, matching the name without regard to case.
@@ -481,7 +523,11 @@ mod tests {
             &png_b,
         )
         .unwrap();
+        let face = sider.join("livecpk/World/Asset/model/character/face/real/77");
+        std::fs::create_dir_all(&face).unwrap();
+        std::fs::write(face.join("portrait.dds"), dds_plain(1, 1, [9, 9, 9, 255])).unwrap();
         let im = Images::from_game(&game);
+        assert_eq!(png_pixel(&im.photo(77).unwrap()), (1, 1, [9, 9, 9, 255]));
         assert_eq!(im.crest_count(), 3);
         assert_eq!(png_pixel(&im.crest(396).unwrap()), (2, 2, [0, 255, 0, 255]));
         // The active world folder beats the CPK, even with a lesser variant.
