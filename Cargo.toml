@@ -1,6 +1,6 @@
 [package]
 name = "pesm-coaching-zone"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 description = "Live Football Life 2027 match stats on your phone, over your home Wi-Fi. Unofficial fan tool."
 license = "MIT"
