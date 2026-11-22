@@ -89,7 +89,7 @@ fn parse_args() -> Args {
                     .unwrap_or(DEFAULT_PORT)
             }
             "--pesdb" => a.pesdb = it.next().map(|v| clean_path(&v)),
-            "--game" => a.game = it.next().map(|v| clean_path(&v)),
+            "--game" => a.game = it.next().map(|v| game_root(clean_path(&v))),
             "-h" | "--help" => {
                 println!("{HELP}");
                 std::process::exit(0);
@@ -106,6 +106,23 @@ fn parse_args() -> Args {
 /// Windows turns `"C:\Games\FL27\"` into `C:\Games\FL27"`: drop the stray quote.
 fn clean_path(v: &str) -> PathBuf {
     PathBuf::from(v.trim().trim_matches('"'))
+}
+
+/// People often point --game at `SiderAddons`; the game folder is the one above it.
+fn game_root(p: PathBuf) -> PathBuf {
+    let is_sider = p
+        .file_name()
+        .is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case("SiderAddons"));
+    match p.parent() {
+        Some(up) if is_sider => {
+            println!(
+                "Using the game folder {} (above SiderAddons).",
+                up.display()
+            );
+            up.to_path_buf()
+        }
+        _ => p,
+    }
 }
 
 fn random_hex(bytes: usize) -> String {
