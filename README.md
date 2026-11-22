@@ -52,7 +52,7 @@ You can also point at a database directly with `--pesdb <folder or .cpk>`. The c
 
 ### Linux (Wine/Proton/Lutris)
 
-Linux only lets a program read another program's memory if you allow it. Do this once, and again after each update of the file:
+Linux only lets a program read another program's memory if you allow it. When the app finds FL27 but may not read it, it asks for your password (a system dialog, or `sudo` in a terminal), sets the permission itself and restarts. This is needed once, and again after each update of the file. To do it by hand:
 
 ```
 sudo setcap cap_sys_ptrace+ep ./pesm-coaching-zone-linux-x86_64

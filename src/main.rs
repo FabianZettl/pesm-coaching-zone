@@ -198,6 +198,38 @@ fn game_folder(args: &Args, cfg: &mut Config) -> Option<PathBuf> {
     Some(g)
 }
 
+/// Linux only lets the app read FL27's memory with `cap_sys_ptrace`. Ask for the
+/// password once (graphical prompt, or sudo in a terminal), set it, and restart.
+#[cfg(target_os = "linux")]
+fn grant_rights_and_restart() {
+    use std::io::IsTerminal;
+    use std::os::unix::process::CommandExt;
+    use std::process::Command;
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    println!("Linux needs your permission to read FL27's memory. Asking for your password ...");
+    let run = |tool: &str| {
+        Command::new(tool)
+            .args(["setcap", "cap_sys_ptrace+ep"])
+            .arg(&exe)
+            .status()
+            .is_ok_and(|s| s.success())
+    };
+    let ok = run("pkexec") || (std::io::stdin().is_terminal() && run("sudo"));
+    if !ok {
+        eprintln!("Permission not granted. See the command below to do it by hand.");
+        return;
+    }
+    println!("Done. Restarting ...");
+    let mut args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    if !args.iter().any(|a| a == "--no-browser") {
+        args.push("--no-browser".into());
+    }
+    let err = Command::new(&exe).args(args).exec();
+    eprintln!("Could not restart ({err}). Please start the app again.");
+}
+
 /// Reads the game every tick and publishes the live view.
 fn reader_loop(tx: watch::Sender<Live>, db: Option<pesdb::Database>, demo: bool) {
     let names = db.is_some() || demo;
@@ -233,6 +265,8 @@ fn reader_loop(tx: watch::Sender<Live>, db: Option<pesdb::Database>, demo: bool)
     let mut last_scan: Option<Instant> = None;
     let mut last_team_scan: Option<Instant> = None;
     let mut last_error = String::new();
+    #[cfg(target_os = "linux")]
+    let mut asked_for_rights = false;
     loop {
         if game.as_ref().is_some_and(|g| !process::is_alive(g)) {
             game = None;
@@ -257,6 +291,11 @@ fn reader_loop(tx: watch::Sender<Live>, db: Option<pesdb::Database>, demo: bool)
                 }
                 Err(e) => {
                     let msg = format!("{e:#}");
+                    #[cfg(target_os = "linux")]
+                    if msg.contains("does not allow reading") && !asked_for_rights {
+                        asked_for_rights = true;
+                        grant_rights_and_restart();
+                    }
                     if msg != last_error {
                         eprintln!("{msg}");
                         last_error = msg.clone();
