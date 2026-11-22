@@ -133,7 +133,10 @@ pub fn find(mem: &dyn Memory) -> Vec<u64> {
         let mut off = 0usize;
         while off + span <= len {
             let n = (CHUNK + span).min(len - off);
-            if let Some(b) = mem.read(r.start + off as u64, n) {
+            if let Some(b) = mem
+                .read(r.start + off as u64, n)
+                .or_else(|| crate::stats::read_in_pieces(mem, r.start + off as u64, n))
+            {
                 // Cheap pre-filter: the home queue head "?? ff 00 NN" at +0x2b0 and "ff ff ff" at +0x2e.
                 let h = QUEUE[0] as usize - 4;
                 let mut i = 0;

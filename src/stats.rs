@@ -154,6 +154,24 @@ impl Snapshot {
     }
 }
 
+/// Reads `len` bytes in 1 MiB pieces; unreadable pieces become zeros.
+/// None if nothing at all could be read.
+pub fn read_in_pieces(mem: &dyn Memory, addr: u64, len: usize) -> Option<Vec<u8>> {
+    const PIECE: usize = 1 << 20;
+    let mut out = vec![0u8; len];
+    let mut any = false;
+    let mut o = 0;
+    while o < len {
+        let n = PIECE.min(len - o);
+        if let Some(b) = mem.read(addr + o as u64, n) {
+            out[o..o + b.len().min(n)].copy_from_slice(&b[..b.len().min(n)]);
+            any = true;
+        }
+        o += n;
+    }
+    any.then_some(out)
+}
+
 /// Scans all writable regions for statistics blocks and returns the address of home slot 0
 /// for each block found. Takes a few seconds on a running game.
 pub fn find_blocks(mem: &dyn Memory) -> Vec<u64> {
@@ -167,7 +185,11 @@ pub fn find_blocks(mem: &dyn Memory) -> Vec<u64> {
         let mut off = 0usize;
         while off + need <= r.len as usize {
             let len = (CHUNK + need).min(r.len as usize - off);
-            let Some(buf) = mem.read(r.start + off as u64, len) else {
+            // One unreadable page must not hide the whole chunk: fall back to 1 MiB pieces.
+            let Some(buf) = mem
+                .read(r.start + off as u64, len)
+                .or_else(|| read_in_pieces(mem, r.start + off as u64, len))
+            else {
                 off += CHUNK;
                 continue;
             };
