@@ -15,6 +15,7 @@ pub const SLOTS: usize = 40;
 pub const KINDS: usize = 0xB0;
 pub const PERIODS: usize = 9;
 pub const STARTERS: usize = 11;
+/// Record heads, low 16 bits only: the upper bytes vary by match (seen 00 00 and 07 07).
 pub const HEAD: [u32; 2] = [65533, 65534];
 
 /// Stat kinds confirmed in real matches.
@@ -80,7 +81,7 @@ impl Snapshot {
                 .map(|i| {
                     let r = buf.get(i * RECORD..(i + 1) * RECORD)?;
                     let u = |o: usize| u32::from_le_bytes(r[o..o + 4].try_into().unwrap());
-                    if u(0) != HEAD[s] || u(4) == 0 {
+                    if u(0) & 0xffff != HEAD[s] || u(4) == 0 {
                         return None;
                     }
                     let vals = (0..KINDS * PERIODS).map(|j| u(8 + j * 4)).collect();
@@ -196,7 +197,7 @@ pub fn find_blocks(mem: &dyn Memory) -> Vec<u64> {
             let u = |o: usize| u32::from_le_bytes(buf[o..o + 4].try_into().unwrap());
             let mut i = 0;
             while i + SIDE_STRIDE + 4 <= buf.len() && i < CHUNK {
-                if u(i) == HEAD[0] && u(i + SIDE_STRIDE) == HEAD[1] {
+                if u(i) & 0xffff == HEAD[0] && u(i + SIDE_STRIDE) & 0xffff == HEAD[1] {
                     let addr = r.start + (off + i) as u64;
                     found.push(addr);
                 }
@@ -301,6 +302,24 @@ mod tests {
         assert!(s.sides[0][18].is_none());
         assert_eq!(s.score(), [2, 1]);
         assert_eq!(s.period(), 3);
+    }
+
+    #[test]
+    fn finds_block_with_other_head_bytes() {
+        // Some matches have heads like fd ff 07 07 instead of fd ff 00 00.
+        let at = 0x2340;
+        let mut m = mem_with_block(at);
+        for side in 0..2 {
+            for slot in 0..18 {
+                let r = at + side * SIDE_STRIDE + slot * RECORD;
+                m.bytes[r + 2..r + 4].copy_from_slice(&[7, 7]);
+            }
+        }
+        let blocks = find_blocks(&m);
+        assert_eq!(blocks, vec![0x1000_0000 + at as u64]);
+        let s = Snapshot::read(&m, blocks[0]).unwrap();
+        assert_eq!(s.sides[1][17].as_ref().unwrap().id, 2017);
+        assert_eq!(s.score(), [2, 1]);
     }
 
     #[test]
